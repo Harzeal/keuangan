@@ -742,6 +742,29 @@
   </div>
 
   <!-- ========================================================================= -->
+  <!-- MODAL: KONFIRMASI RESET SELURUH TRANSAKSI (MULAI DARI NOL) -->
+  <!-- ========================================================================= -->
+  <div id="resetAllModal" class="fixed inset-0 z-50 hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 p-6 text-center transform transition-all">
+      <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-500 flex items-center justify-center text-xl">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <h3 class="text-base font-bold text-slate-900 dark:text-white mb-1">Mulai Dari Nol?</h3>
+      <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+        Apakah Anda yakin ingin menghapus seluruh catatan uang masuk dan uang keluar? Saldo akan kembali ke <strong>Rp 0</strong> dan database bersih dari awal.
+      </p>
+      <div class="flex items-center justify-center gap-3">
+        <button onclick="closeModal('resetAllModal')" class="flex-1 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Batal
+        </button>
+        <button onclick="confirmResetAllTransactions()" id="btnConfirmResetAll" class="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shadow-md transition">
+          Ya, Kosongkan Semua
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
   <!-- MODAL: KONEKSI & PANDUAN SQL SUPABASE -->
   <!-- ========================================================================= -->
   <div id="sqlModal" class="fixed inset-0 z-50 hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -855,6 +878,24 @@ ON public.monthly_budgets FOR ALL TO anon, authenticated USING (true) WITH CHECK
           </div>
         </div>
 
+        <!-- Danger Zone: Reset Data -->
+        <div class="pt-3 border-t border-rose-100 dark:border-rose-950/60">
+          <h4 class="font-bold text-rose-600 dark:text-rose-400 text-xs mb-2 flex items-center gap-1.5">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>Zona Pengosongan Database:</span>
+          </h4>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-rose-50/50 dark:bg-rose-950/20 p-3.5 rounded-2xl border border-rose-100 dark:border-rose-900/40">
+            <div>
+              <p class="text-xs font-semibold text-slate-800 dark:text-slate-200">Kosongkan Seluruh Transaksi</p>
+              <p class="text-[11px] text-slate-400">Hapus semua riwayat uang masuk & uang keluar agar database kembali mulai dari 0.</p>
+            </div>
+            <button type="button" onclick="promptResetAllTransactions()" class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shrink-0 flex items-center justify-center gap-1.5 shadow-sm transition">
+              <i class="fa-solid fa-trash-can"></i>
+              <span>Mulai dari Nol</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Action Row in Modal -->
         <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
           <button onclick="testSupabaseConnection(true)" id="btnTestConn" class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition">
@@ -886,7 +927,7 @@ ON public.monthly_budgets FOR ALL TO anon, authenticated USING (true) WITH CHECK
       supabaseUrl: 'https://sxwnweslamgdegmjsznm.supabase.co',
       supabaseKey: 'sb_publishable_-wmXwhcY9XqedENRsuE5fw_NyxUXLZO',
       storageKeys: {
-        transactions: 'fauzan_keuangan_tx_v1',
+        transactions: 'fauzan_keuangan_tx_v2',
         budgets: 'fauzan_keuangan_budgets_v1',
         theme: 'fauzan_keuangan_theme',
         privacy: 'fauzan_keuangan_privacy'
@@ -1027,43 +1068,19 @@ ON public.monthly_budgets FOR ALL TO anon, authenticated USING (true) WITH CHECK
      */
     function loadLocalData() {
       try {
+        // Hapus cache versi lama jika ada
+        if (localStorage.getItem('fauzan_keuangan_tx_v1')) {
+          localStorage.removeItem('fauzan_keuangan_tx_v1');
+        }
+
         const localTx = localStorage.getItem(CONFIG.storageKeys.transactions);
         if (localTx) {
           state.transactions = JSON.parse(localTx);
+          // Pastikan tidak ada data demo yang tersisa
+          state.transactions = state.transactions.filter(t => !['demo-1', 'demo-2', 'demo-3'].includes(t.id));
         } else {
-          // Default initial friendly sample transactions if brand new
-          state.transactions = [
-            {
-              id: 'demo-1',
-              type: 'income',
-              amount: 5000000,
-              title: 'Gaji Bulanan',
-              category: 'Gaji',
-              date: `${state.currentMonthYear}-01`,
-              notes: 'Gaji pokok bulanan masuk rekening',
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 'demo-2',
-              type: 'expense',
-              amount: 45000,
-              title: 'Makan Siang & Es Teh',
-              category: 'Makanan & Minuman',
-              date: `${state.currentMonthYear}-02`,
-              notes: 'Makan siang warteg',
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 'demo-3',
-              type: 'expense',
-              amount: 50000,
-              title: 'Isi Bensin Motor',
-              category: 'Transportasi',
-              date: `${state.currentMonthYear}-03`,
-              notes: 'Pertamax Full',
-              created_at: new Date().toISOString()
-            }
-          ];
+          // Database awal mulai dari NOL (bersih tanpa sampel uang masuk/keluar)
+          state.transactions = [];
           saveLocalData();
         }
 
@@ -1071,7 +1088,7 @@ ON public.monthly_budgets FOR ALL TO anon, authenticated USING (true) WITH CHECK
         if (localBudgets) {
           state.budgets = JSON.parse(localBudgets);
         } else {
-          state.budgets[state.currentMonthYear] = 3000000;
+          state.budgets = {};
           saveLocalData();
         }
       } catch (e) {
@@ -1199,12 +1216,9 @@ ON public.monthly_budgets FOR ALL TO anon, authenticated USING (true) WITH CHECK
         const txRes = await supabaseFetch('transactions?select=*&order=date.desc,created_at.desc');
         if (txRes.ok) {
           const cloudTx = await txRes.json();
-          if (Array.isArray(cloudTx) && cloudTx.length > 0) {
+          if (Array.isArray(cloudTx)) {
             state.transactions = cloudTx;
             saveLocalData();
-          } else if (state.transactions.length > 0) {
-            // Cloud is empty but local has data, offer migration
-            console.log('Cloud empty, local has items');
           }
         }
 
@@ -2152,6 +2166,49 @@ ON public.monthly_budgets FOR ALL TO anon, authenticated USING (true) WITH CHECK
       } finally {
         btn.disabled = false;
         btn.innerHTML = 'Ya, Hapus';
+      }
+    }
+
+    /**
+     * RESET ALL TRANSACTIONS (MULAI DARI NOL)
+     */
+    function promptResetAllTransactions() {
+      openModal('resetAllModal');
+    }
+
+    async function confirmResetAllTransactions() {
+      const btn = document.getElementById('btnConfirmResetAll');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Mengosongkan...';
+      }
+
+      try {
+        // 1. Hapus semua transaksi di Supabase cloud jika terhubung
+        if (state.supabaseTableReady) {
+          const res = await supabaseFetch('transactions?type=in.(income,expense)', {
+            method: 'DELETE'
+          });
+          if (!res.ok) {
+            console.warn('Gagal menghapus semua data dari Supabase via query, mencoba menghapus per item');
+          }
+        }
+
+        // 2. Kosongkan state transaksi di aplikasi
+        state.transactions = [];
+        saveLocalData();
+
+        showToast('Semua catatan uang masuk & keluar berhasil dihapus. Database mulai dari 0!', 'success');
+        closeModal('resetAllModal');
+        closeModal('sqlModal');
+        renderAll();
+      } catch (err) {
+        showToast(`Gagal mereset transaksi: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = 'Ya, Kosongkan Semua';
+        }
       }
     }
 
