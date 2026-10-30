@@ -1,140 +1,105 @@
-# 💰 Aplikasi Pencatat Keuangan Pribadi (FinTrack) - Fauzan
+# 💰 FinFlow — Aplikasi Pengelolaan Keuangan Pribadi & Smart Budget Tracker (Supabase Multi-User)
 
-Aplikasi web modern, responsif, dan lengkap untuk mencatat pemasukan dan pengeluaran keuangan bulanan. Dilengkapi integrasi database cloud **Supabase** agar dapat diakses dan diinput dari perangkat mana saja (HP Android/iPhone, Tablet, Laptop), serta didukung penyimpanan offline lokal (Local Storage) otomatis.
+Aplikasi web pencatat dan pengelola keuangan pribadi (*personal finance tracker*) berbasis **React (Vite)**, **Framer Motion**, dan **Tailwind CSS**, yang terintegrasi secara *real-time* dengan cloud database & autentikasi **Supabase**. Dilengkapi alokasi anggaran 50/20/30, kontrol limit harian/mingguan otomatis, indikator *smart alert* (perubahan warna/glowing), rekomendasi AI/algoritma finansial cerdas, visualisasi data interaktif, dan ekspor laporan ke format **PDF resmi** serta **Excel / CSV**.
+
+Aplikasi mendukung **Multi-User** penuh dengan **Row Level Security (RLS)** — setiap data transaksi, anggaran, dan kategori pengguna dienkripsi serta diisolasi aman dan hanya bisa diakses oleh akun masing-masing.
 
 ---
 
-## 🌟 Fitur Utama
+## ✨ Fitur-Fitur Utama
 
-1. **Pencatatan Cepat & Mudah (Hanya Jumlah & Keperluan):**
-   - Cukup masukkan **Jumlah Uang (Nominal)** dan **Untuk Apa (Keperluan)**.
-   - Pilihan kategori fleksibel (+ dukungan menambah kategori kustom sendiri).
-   - Pratinjau otomatis format Rupiah (`Rp 50.000`) dan kalimat terbilang Indonesia (*"Lima puluh ribu rupiah"*).
-   - Tombol nominal cepat (`+10 rb`, `+25 rb`, `+50 rb`, `+100 rb`, `+500 rb`, `+1 Jt`).
+1. **Autentikasi Multi-User & Keamanan Cloud Supabase:**
+   - Halaman Login & Register dengan animasi transisi tab yang halus (*Framer Motion*).
+   - Fitur Lupa Password / Reset Password dengan alur pengiriman email verifikasi dari Supabase.
+   - Manajemen sesi (*Session Handling*) otomatis dan profil pengguna.
+   - Row Level Security (RLS) pada tabel `profiles`, `budget_settings`, `categories`, dan `transactions`.
 
-2. **Sistem Anggaran & Pengurangan Otomatis (Budget Tracking):**
-   - Fitur **Atur Anggaran Bulanan** (pagu belanja).
-   - Aplikasi otomatis **mengurangi pengeluaran dari uang bulanan Anda**.
-   - Indikator bar visual status anggaran (Aman, Waspada > 75%, Melebihi Anggaran).
-   - **Rekomendasi Belanja Harian:** Aplikasi menghitung sisa hari dalam bulan tersebut dan memberikan batas belanja aman harian agar tidak defisit.
+2. **Dashboard & Alokasi Anggaran Real-Time (Aturan 50/20/30 & Kustom):**
+   - Input pendapatan bulanan dengan efek counter animasi angka berjalan (*Animated Counter*).
+   - Slider pengaturan persentase alokasi pos: **Kebutuhan (50%)**, **Keinginan (20%)**, dan **Tabungan / Investasi (30%)** atau kustom.
+   - Kalkulasi nominal Rupiah real-time untuk tiap pos anggaran.
+   - 4 Kartu Metrik Utama: Saldo Bersih Kas, Sisa Anggaran Bulanan, Sisa Limit Hari Ini, dan Sisa Limit Minggu Ini.
+   - *Mode Privasi (Privacy Eye)*: Sembunyikan nominal saldo saat berada di tempat umum atau membuka layar di depan orang lain.
 
-3. **Uang Masuk & Uang Keluar:**
-   - Pencatatan **Uang Masuk** (Gaji, Bonus, Usaha, Hadiah, dll.) dengan efek selebrasi.
-   - Pencatatan **Uang Keluar** (Makan & Minum, Bensin, Tagihan, Belanja, dll.).
-   - Ringkasan 4 Kartu Metrik Utama:
-     - 💳 Saldo Kas Keseluruhan (Net Balance)
-     - 🟢 Uang Masuk Bulan Ini
-     - 🔴 Uang Keluar Bulan Ini
-     - 🎯 Sisa Uang / Anggaran Bulanan
+3. **Kontrol Limit Harian/Mingguan & Smart Alert Visual:**
+   - Penghitungan otomatis batas belanja aman per hari dan per minggu dari sisa anggaran dibagi sisa hari dalam bulan.
+   - **Smart Alert Indicator**: Perubahan warna UI dan lencana glowing:
+     - 🟢 **Aman**: Pengeluaran masih di bawah 80% limit.
+     - 🟡 **Waspada (Warning)**: Pengeluaran mencapai 80% - 99% dari limit harian/mingguan.
+     - 🔴 **Bahaya (Danger / Overbudget)**: Pengeluaran melampaui limit dengan efek glowing pulsasi merah dan pesan peringatan taktis.
 
-4. **Navigasi Antar Bulan (Month Picker):**
-   - Mudah berpindah ke bulan sebelumnya atau bulan berikutnya.
-   - Lompat langsung ke "Bulan Ini" dengan satu klik.
+4. **Pencatatan Keuangan & Kategori Kustom:**
+   - Modal pop-up tambah transaksi dengan animasi slide-in & fade-in.
+   - Pratinjau otomatis kalimat terbilang bahasa Indonesia (*"Lima puluh ribu rupiah"*).
+   - Tombol nominal instan (+10 rb, +25 rb, +50 rb, +100 rb, +250 rb, +500 rb, +1 Jt).
+   - Pengguna dapat menambah dan mengelola **sub-kategori kustom** sendiri (tersimpan aman ke Supabase).
+   - Efek perayaan (*confetti celebration*) saat mencatat pemasukan atau tabungan!
 
-5. **Visualisasi Data & Grafik (Chart.js):**
-   - **Donut Chart:** Persentase dan rincian pengeluaran per kategori.
-   - **Bar Chart:** Tren perbandingan uang masuk vs uang keluar harian.
-   - Wawasan keuangan: Rata-rata pengeluaran per hari, kategori terboros, dan *saving rate* (rasio menabung).
+5. **Rekomendasi Pintar & Analisis AI Finansial (Smart Advisor):**
+   - **Skor Kesehatan Finansial (Health Score 0-100)** berbasis rasio belanja vs tabungan.
+   - Rekomendasi otomatis jika pos keinginan melebihi batas, tips tabungan (*Pay Yourself First*), dan deteksi kategori belanja paling boros.
 
-6. **Privasi & Tampilan Modern:**
-   - **Mode Privasi (Privacy Eye):** Sembunyikan nominal saldo saat berada di tempat umum atau membuka web di depan orang lain.
-   - **Mode Gelap (Dark Mode) & Mode Terang:** Menyesuaikan preferensi mata dan tema perangkat.
-   - Desain responsif ramah smartphone (termasuk *Bottom Navigation Bar* di HP).
+6. **Visualisasi Data Beranimasi & Ekspor Laporan:**
+   - **Animated Donut Chart (Recharts)**: Distribusi belanja pos 50/20/30 dan per sub-kategori pengeluaran.
+   - **Animated Bar Chart (Recharts)**: Komparasi arus kas multi-bulan (pemasukan vs pengeluaran vs tabungan).
+   - **Ekspor Dokumen PDF**: Laporan keuangan resmi, rapi, dengan tabel ringkasan metrik dan rincian transaksi berhalaman.
+   - **Ekspor Excel / CSV**: Kompatibel dengan spreadsheet Windows Excel (BOM UTF-8).
 
-7. **Ekspor & Pencadangan Data:**
-   - Ekspor laporan bulanan ke format **Excel / CSV**.
-   - Format cetak ramah printer (**Print Preview**).
-   - **Cadangan JSON:** Download file backup atau pulihkan (*restore*) data kapan saja.
+---
 
-8. **Database Cloud Supabase & Mode Offline:**
-   - Terintegrasi langsung dengan project Supabase Anda:
-     - **Project URL:** `https://sxwnweslamgdegmjsznm.supabase.co`
-     - **Publishable Key:** `sb_publishable_-wmXwhcY9XqedENRsuE5fw_NyxUXLZO`
-   - Jika offline atau belum membuat tabel di Supabase, aplikasi tetap 100% berjalan lancar menggunakan LocalStorage perangkat, dan menyediakan fitur 1-klik migrasi data ke cloud.
+## 🛠️ Stack Teknologi
+
+- **Frontend Framework**: React 18 (Vite) + TypeScript
+- **Animasi & Interaksi**: Framer Motion & Canvas Confetti
+- **Styling**: Tailwind CSS (Dark Mode & Light Mode support)
+- **Charts & Visualisasi**: Recharts (SVG-based reactive charts)
+- **Backend & Auth Engine**: Supabase JS SDK (`@supabase/supabase-js`)
+- **Database**: PostgreSQL dengan Row Level Security (RLS)
+- **Ekspor Laporan**: jsPDF & jsPDF-AutoTable
 
 ---
 
 ## 🚀 Cara Menjalankan Aplikasi Secara Lokal
 
-1. Buka folder `e:\Fauzan\keuangan`.
-2. Klik ganda file `index.html` untuk langsung membukanya di browser favorit Anda (Google Chrome, Edge, Safari, Firefox).
-3. Tidak memerlukan instalasi server atau `npm install` apapun, semuanya langsung berjalan!
+### 1. Prasyarat
+Pastikan Node.js (v18+) sudah terpasang di komputer Anda.
+
+### 2. Jalankan Server Dev Vite
+Buka terminal (PowerShell atau Command Prompt) di folder `e:\Fauzan\keuangan`:
+
+```bash
+npm run dev
+```
+
+Aplikasi akan otomatis terbuka di browser pada alamat:
+👉 `http://localhost:3000`
 
 ---
 
-## 🗄️ Cara Mengaktifkan Database Supabase (Hanya 1 Kali)
+## 🗄️ Menyiapkan Skema Database Supabase (Hanya 1 Kali)
 
-Agar transaksi tersimpan secara online di database Supabase dan bisa diakses dari perangkat mana saja:
-
-1. Buka dashboard Supabase Anda:
+1. Buka dashboard Supabase proyek Anda:
    👉 **[Supabase SQL Editor](https://supabase.com/dashboard/project/sxwnweslamgdegmjsznm/sql/new)**
-2. Buka file [`supabase_schema.sql`](supabase_schema.sql) (atau klik tombol **Database** di pojok kanan atas aplikasi, lalu klik **Salin Kode SQL**).
-3. Tempelkan (*paste*) seluruh kode SQL berikut ke SQL Editor Supabase:
-
-```sql
--- 1. Buat Tabel Transaksi
-CREATE TABLE IF NOT EXISTS public.transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-    amount NUMERIC(15, 2) NOT NULL CHECK (amount > 0),
-    title TEXT NOT NULL,
-    category TEXT NOT NULL DEFAULT 'Lainnya',
-    date DATE NOT NULL DEFAULT CURRENT_DATE,
-    notes TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
-CREATE INDEX IF NOT EXISTS idx_transactions_date ON public.transactions (date DESC);
-CREATE INDEX IF NOT EXISTS idx_transactions_type ON public.transactions (type);
-
--- 2. Buat Tabel Anggaran Bulanan
-CREATE TABLE IF NOT EXISTS public.monthly_budgets (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    month_year TEXT NOT NULL UNIQUE,
-    budget_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
-    notes TEXT,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
--- 3. Kebijakan Akses (RLS) untuk Publishable Key
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.monthly_budgets ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Public full access transactions" 
-ON public.transactions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-CREATE POLICY "Public full access monthly_budgets" 
-ON public.monthly_budgets FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-```
-
-4. Klik tombol hijau **RUN** di pojok kanan bawah editor Supabase.
-5. Buka kembali halaman `index.html` di browser Anda, klik ikon **Database** lalu klik **"Tes Koneksi Ulang"** atau **"Upload Data Lokal ke Cloud"**. Badge status akan berubah menjadi **🟢 Online Cloud**!
+2. Buka file [`supabase_schema.sql`](supabase_schema.sql) di folder proyek ini.
+3. Salin (*copy*) seluruh isi kodenya, lalu tempel (*paste*) ke dalam SQL Editor Supabase.
+4. Klik tombol hijau **RUN**.
+5. Selesai! Skema tabel `profiles`, `budget_settings`, `categories`, `transactions`, RLS policies, dan trigger otomatis pendaftaran pengguna baru telah aktif.
 
 ---
 
-## 🌐 Cara Mengonlinekan Web Ini Agar Bisa Dibuka Dari HP / Mana Saja (Gratis 100%)
+## 🌐 Menghosting / Mengonlinekan Web (Gratis)
 
-Anda bisa mengonlinekan file `index.html` ini secara gratis dalam 2 menit menggunakan salah satu cara berikut:
+Aplikasi ini siap di-deploy dalam 1 menit ke platform hosting modern mana pun:
 
-### Opsi A: Menggunakan Vercel / Netlify (Paling Mudah)
-1. Buka [app.netlify.com/drop](https://app.netlify.com/drop) atau [vercel.com](https://vercel.com).
-2. Tarik (*drag & drop*) folder `e:\Fauzan\keuangan` ke halaman tersebut.
-3. Dalam 5 detik, Anda akan mendapatkan link website aktif (contoh: `keuangan-fauzan.netlify.app`).
-4. Simpan link tersebut di bookmark browser HP Anda atau klik *"Add to Home Screen"* di HP agar menjadi seperti aplikasi native!
+### Opsi A: Vercel (Rekomendasi)
+1. Buat build produksi:
+   ```bash
+   npm run build
+   ```
+2. Hubungkan repository GitHub Anda ke [vercel.com](https://vercel.com) atau deploy folder `dist`.
+3. Tambahkan Environment Variable di Vercel:
+   - `VITE_SUPABASE_URL` = `https://sxwnweslamgdegmjsznm.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` = `sb_publishable_-wmXwhcY9XqedENRsuE5fw_NyxUXLZO`
 
-### Opsi B: Menggunakan GitHub Pages
-1. Buat repository baru di GitHub (misal: `keuangan`).
-2. Upload file `index.html`, `supabase_schema.sql`, dan `README.md`.
-3. Masuk ke **Settings** > **Pages** > pilih branch `main` dan klik **Save**.
-4. Website Anda siap diakses di `https://username.github.io/keuangan/`.
-
----
-
-## 📱 Struktur Berkas Proyek
-
-```
-e:\Fauzan\keuangan/
-├── index.html           # Aplikasi web utama lengkap (UI, Logika, Charts, Supabase)
-├── supabase_schema.sql  # Skrip migrasi database Supabase siap pakai
-└── README.md            # Dokumentasi panduan penggunaan & panduan online
-```
+### Opsi B: Netlify
+Tarik (*drag & drop*) folder `dist` hasil build ke [app.netlify.com/drop](https://app.netlify.com/drop).
