@@ -8,6 +8,8 @@ interface AuthContextType {
   session: Session | null;
   profile: UserProfile | null;
   loading: boolean;
+  isPasswordRecovery: boolean;
+  setIsPasswordRecovery: (val: boolean) => void;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null; user: User | null }>;
   signOut: () => Promise<void>;
@@ -24,6 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
 
   // Ambil profil dari tabel public.profiles
   const fetchProfile = async (userId: string, userEmail?: string, metaFullName?: string) => {
@@ -64,6 +67,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
+    // Cek apakah URL dibuka dari tautan recovery / reset password di Gmail
+    if (window.location.hash.includes('type=recovery') || window.location.hash.includes('reset-password')) {
+      setIsPasswordRecovery(true);
+    }
+
     // Ambil sesi aktif pertama kali
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return;
@@ -88,6 +96,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!mounted) return;
         setSession(newSession);
         setUser(newSession?.user ?? null);
+
+        // Jika event reset password terpantau
+        if (event === 'PASSWORD_RECOVERY' || window.location.hash.includes('type=recovery') || window.location.hash.includes('reset-password')) {
+          setIsPasswordRecovery(true);
+        }
 
         if (newSession?.user) {
           await fetchProfile(
@@ -128,7 +141,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         options: {
           data: {
             full_name: fullName.trim()
-          }
+          },
+          // Arahkan verifikasi email langsung ke domain web online yang sedang dibuka
+          emailRedirectTo: `${window.location.origin}`
         }
       });
       return { error, user: data.user };
@@ -199,6 +214,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session,
         profile,
         loading,
+        isPasswordRecovery,
+        setIsPasswordRecovery,
         signIn,
         signUp,
         signOut,

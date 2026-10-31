@@ -16,6 +16,7 @@ import { getCurrentMonthYear, formatMonthYear } from './lib/utils';
 
 // Components
 import { AuthPage } from './components/auth/AuthPage';
+import { UpdatePasswordModal } from './components/auth/UpdatePasswordModal';
 import { Navbar } from './components/common/Navbar';
 import { MetricCards } from './components/dashboard/MetricCards';
 import { BudgetAllocationCard } from './components/dashboard/BudgetAllocationCard';
@@ -29,7 +30,7 @@ import { ExportModal } from './components/export/ExportModal';
 import { ConfigModal } from './components/common/ConfigModal';
 
 export const App: React.FC = () => {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
 
   // State Bulan Terpilih (Format: 'YYYY-MM')
   const [selectedMonthYear, setSelectedMonthYear] = useState<string>(getCurrentMonthYear());
@@ -100,6 +101,15 @@ export const App: React.FC = () => {
         <p className="text-sm font-semibold text-slate-300 animate-pulse">
           Memuat FinFlow Cloud...
         </p>
+      </div>
+    );
+  }
+
+  // Jika pengguna membuka tautan recovery / reset password dari email
+  if (isPasswordRecovery) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+        <UpdatePasswordModal onSuccess={() => setIsPasswordRecovery(false)} />
       </div>
     );
   }
@@ -223,6 +233,10 @@ export const App: React.FC = () => {
 
       {/* MODALS */}
       <AnimatePresence>
+        {isPasswordRecovery && (
+          <UpdatePasswordModal onSuccess={() => setIsPasswordRecovery(false)} />
+        )}
+
         {isAddModalOpen && (
           <AddTransactionModal
             categories={categories}
