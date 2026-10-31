@@ -14,6 +14,7 @@ import {
 import { MonthSummary } from '../../types/database';
 import { AnimatedCounter } from '../common/AnimatedCounter';
 import { SmartAlertBadge } from '../common/SmartAlertBadge';
+import { formatRupiah } from '../../lib/utils';
 
 interface MetricCardsProps {
   summary: MonthSummary;
@@ -175,7 +176,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ summary, privacyMode }
         </div>
 
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-          Sisa Limit Hari Ini ({summary.days_left_in_month} hari tersisa)
+          Sisa Limit Hari Ini (Pagu: {privacyMode ? '•••' : formatRupiah(summary.daily_limit)}/hari)
         </p>
 
         <div className={`mt-1 text-2xl sm:text-3xl font-extrabold tracking-tight ${
@@ -235,7 +236,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ summary, privacyMode }
         </div>
 
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-          Sisa Limit Minggu Ini
+          Sisa Limit Minggu Ini (Pagu: {privacyMode ? '•••' : formatRupiah(summary.weekly_limit)}/mgg)
         </p>
 
         <div className={`mt-1 text-2xl sm:text-3xl font-extrabold tracking-tight ${

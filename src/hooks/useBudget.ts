@@ -106,8 +106,17 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         .order('date', { ascending: false })
         .order('created_at', { ascending: false });
 
+      const formatTxList = (list: any[]): Transaction[] => {
+        return list.map((t: any) => ({
+          ...t,
+          category_name: t.category_name || t.category || 'Umum',
+          main_category: t.main_category || (t.type === 'income' ? 'income' : 'needs'),
+          category_id: t.category_id || null
+        }));
+      };
+
       if (monthError) throw monthError;
-      setTransactions((monthData || []) as Transaction[]);
+      setTransactions(formatTxList(monthData || []));
 
       // 2. Ambil seluruh transaksi untuk analitik multi-bulan (maksimal 6 bulan terakhir)
       const { data: allData, error: allError } = await supabase
@@ -117,7 +126,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         .order('date', { ascending: false });
 
       if (!allError && allData) {
-        setAllTransactions(allData as Transaction[]);
+        setAllTransactions(formatTxList(allData || []));
       }
     } catch (err: any) {
       console.error('Error fetching transactions:', err);
@@ -177,17 +186,55 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     if (!user) return { error: new Error('User tidak ditemukan'), data: null };
 
     try {
-      const newTx = {
-        ...txData,
+      const payload: Record<string, any> = {
         user_id: user.id,
+        type: txData.type,
+        amount: txData.amount,
+        title: txData.title,
+        main_category: txData.main_category,
+        category_name: txData.category_name,
+        category: txData.category_name, // fallback untuk tabel Supabase versi lama
+        date: txData.date,
+        notes: txData.notes || txData.title,
         created_at: new Date().toISOString()
       };
 
-      const { data, error } = await supabase
+      // Hanya sertakan category_id jika benar-benar ada (bukan untuk pemasukan)
+      if (txData.type !== 'income' && txData.category_id && typeof txData.category_id === 'string' && txData.category_id.trim() !== '') {
+        payload.category_id = txData.category_id.trim();
+      }
+
+      let { data, error } = await supabase
         .from('transactions')
-        .insert(newTx)
+        .insert(payload)
         .select()
         .single();
+
+      // Fallback Cerdas: Jika tabel Supabase user belum punya kolom 'category_id'
+      if (error && error.message && error.message.toLowerCase().includes('category_id')) {
+        console.warn("Kolom 'category_id' belum ada di Supabase, mencoba insert ulang tanpa category_id...");
+        delete payload.category_id;
+        const retryResult = await supabase
+          .from('transactions')
+          .insert(payload)
+          .select()
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
+      // Fallback jika 'category_name' belum ada (hanya ada kolom lama 'category')
+      if (error && error.message && error.message.toLowerCase().includes('category_name')) {
+        console.warn("Kolom 'category_name' belum ada, mencoba insert hanya dengan 'category'...");
+        delete payload.category_name;
+        const retryResult = await supabase
+          .from('transactions')
+          .insert(payload)
+          .select()
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
 
       if (error) throw error;
 
@@ -348,13 +395,20 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     const netSavings = totalIncome - totalExpense;
     const savingsRate = totalIncome > 0 ? ((savingsAllocated + Math.max(0, netSavings - savingsAllocated)) / totalIncome) * 100 : 0;
 
-    // Sisa hari & Limit Harian
-    const { daysLeft } = getMonthDaysInfo(selectedMonthYear);
+    // Total hari & Sisa hari dalam bulan berjalan
+    const { totalDays, daysLeft } = getMonthDaysInfo(selectedMonthYear);
 
-    // Limit Harian = Sisa Anggaran (Kebutuhan + Keinginan) dibagi sisa hari
-    const dailyLimit = daysLeft > 0 ? Math.max(0, Math.round(remainingTotalBudget / daysLeft)) : 0;
+    // Total uang bulanan acuan limit:
+    // Sesuai permintaan: Limit harian membagi total uang bulanan dengan total hari dalam 1 bulan itu
+    const totalMonthlyMoney = totalIncome > 0 ? totalIncome : (budgetNeeds + budgetWants);
 
-    // Pengeluaran Hari Ini (Expenses with date = today)
+    // 1. Limit Harian = Total uang bulanan dibagi total hari dalam 1 bulan (misal 30 atau 31 hari)
+    const dailyLimit = totalDays > 0 ? Math.round(totalMonthlyMoney / totalDays) : 0;
+
+    // 2. Limit Mingguan = Limit Harian dikali 7 hari
+    const weeklyLimit = dailyLimit * 7;
+
+    // Pengeluaran Hari Ini (Expenses dengan tanggal hari ini, tidak termasuk pos tabungan)
     const todayStr = new Date().toISOString().split('T')[0];
     const spentToday = expenseTx
       .filter((t) => t.date === todayStr && t.main_category !== 'savings')
@@ -362,7 +416,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
 
     const remainingToday = dailyLimit - spentToday;
 
-    // Pengeluaran Minggu Ini (Senin sampai hari ini)
+    // Pengeluaran Minggu Ini (Senin sampai hari ini, tidak termasuk pos tabungan)
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday...
     const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -374,7 +428,6 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       .filter((t) => t.date >= mondayStr && t.date <= todayStr && t.main_category !== 'savings')
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
-    const weeklyLimit = dailyLimit * 7;
     const remainingThisWeek = weeklyLimit - spentThisWeek;
 
     // Smart Alert Levels
@@ -404,6 +457,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       spent_this_week: spentThisWeek,
       remaining_this_week: remainingThisWeek,
       days_left_in_month: daysLeft,
+      total_days_in_month: totalDays,
       alert_level_daily: alertDaily,
       alert_level_weekly: alertWeekly,
       alert_level_monthly: alertMonthly

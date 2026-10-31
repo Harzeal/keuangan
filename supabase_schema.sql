@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- Penyesuaian Kolom (Migrasi Otomatis jika tabel transactions lama sudah ada sebelumnya)
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS main_category TEXT DEFAULT 'needs' CHECK (main_category IN ('needs', 'wants', 'savings', 'income'));
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS category_name TEXT DEFAULT 'Lainnya';
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL;
+
 -- 6. INDEXING UNTUK PERFORMA TINGGI
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON public.transactions (user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_type ON public.transactions (user_id, type);
@@ -236,6 +242,9 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Refresh cache PostgREST agar kolom baru langsung dikenali oleh API Supabase
+NOTIFY pgrst, 'reload schema';
 
 -- ==============================================================================
 -- SELESAI! Skema database siap digunakan untuk aplikasi multi-user aman.

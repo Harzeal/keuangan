@@ -91,7 +91,7 @@ export const SmartLimitControl: React.FC<SmartLimitControlProps> = ({
           {/* Numbers comparison */}
           <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-200/60 dark:border-slate-700/60 text-center">
             <div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">Limit Pagu</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Limit Harian (1 Bln: {summary.total_days_in_month} Hari)</p>
               <p className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-200 mt-0.5">
                 {privacyMode ? '•••' : formatRupiah(summary.daily_limit)}
               </p>
@@ -186,7 +186,7 @@ export const SmartLimitControl: React.FC<SmartLimitControlProps> = ({
           {/* Numbers comparison */}
           <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-200/60 dark:border-slate-700/60 text-center">
             <div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">Limit Pagu</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Limit Mingguan (7 Hari)</p>
               <p className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-200 mt-0.5">
                 {privacyMode ? '•••' : formatRupiah(summary.weekly_limit)}
               </p>

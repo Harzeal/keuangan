@@ -70,6 +70,7 @@ export interface MonthSummary {
   spent_this_week: number;
   remaining_this_week: number;
   days_left_in_month: number;
+  total_days_in_month: number;
   alert_level_daily: 'safe' | 'warning' | 'danger';
   alert_level_weekly: 'safe' | 'warning' | 'danger';
   alert_level_monthly: 'safe' | 'warning' | 'danger';
