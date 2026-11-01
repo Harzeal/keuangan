@@ -51,7 +51,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ onClose 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-12 sm:pt-16 pb-8 bg-black/60 backdrop-blur-sm overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -60,14 +60,13 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ onClose 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl relative text-white"
+        className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl relative text-white my-4"
       >
         <button
           onClick={onClose}
           title="Tutup (Esc)"
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-700/60 transition flex items-center gap-1"
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-700/60 transition"
         >
-          <span className="text-[10px] font-semibold text-slate-400 hidden sm:inline">Esc</span>
           <X className="w-5 h-5" />
         </button>
 
