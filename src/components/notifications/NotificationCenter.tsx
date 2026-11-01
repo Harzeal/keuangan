@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   CheckCheck,
   Settings,
+  X,
   Trash2,
   Inbox,
   AlertTriangle,
@@ -30,6 +31,22 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+
+  // Tutup panel ketika pengguna menekan tombol ESC di keyboard
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
@@ -100,6 +117,13 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                     className="p-1.5 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                   >
                     <Settings className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setIsOpen(false)}
+                    title="Tutup Panel Notifikasi (Esc)"
+                    className="p-1.5 text-xs text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  >
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
