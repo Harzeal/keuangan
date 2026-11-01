@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useBudget } from './hooks/useBudget';
-import { getCurrentMonthYear, formatMonthYear } from './lib/utils';
+import { getCurrentMonthYear, formatMonthYear, formatRupiah } from './lib/utils';
 
 // Components
 import { AuthPage } from './components/auth/AuthPage';
@@ -227,10 +227,15 @@ export const App: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border border-emerald-500/30 text-xs font-bold text-emerald-700 dark:text-emerald-300 shadow-xs">
+              <Wallet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Total Uang: {privacyMode ? '••••••••' : formatRupiah(summary.cumulative_total_balance)}</span>
+            </span>
+
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-sm">
               <Calendar className="w-3.5 h-3.5 text-brand-500" />
-              <span>Sisa {summary.days_left_in_month} Hari di Bulan Ini</span>
+              <span>Sisa {summary.days_left_in_month} Hari</span>
             </span>
           </div>
         </div>

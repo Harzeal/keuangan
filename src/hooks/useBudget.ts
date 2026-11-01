@@ -16,6 +16,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [allBudgetSettings, setAllBudgetSettings] = useState<BudgetSettings[]>([]);
   const [budgetSettings, setBudgetSettings] = useState<BudgetSettings>({
     month_year: selectedMonthYear,
     monthly_income: 0,
@@ -45,28 +46,26 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     }
   }, [user]);
 
-  // Ambil pengaturan budget bulan terpilih
+  // Ambil pengaturan budget bulan terpilih & seluruh budget settings
   const fetchBudgetSettings = useCallback(async () => {
     if (!user) return;
     try {
-      const { data, error } = await supabase
+      const { data: allData, error } = await supabase
         .from('budget_settings')
         .select('*')
-        .eq('user_id', user.id)
-        .eq('month_year', selectedMonthYear)
-        .maybeSingle();
+        .eq('user_id', user.id);
 
-      if (data) {
-        setBudgetSettings(data as BudgetSettings);
+      if (allData) {
+        setAllBudgetSettings(allData as BudgetSettings[]);
+      }
+
+      const current = allData?.find((s) => s.month_year === selectedMonthYear);
+      if (current) {
+        setBudgetSettings(current as BudgetSettings);
       } else {
         // Coba cari bulan sebelumnya sebagai acuan default alokasi
-        const { data: prevData } = await supabase
-          .from('budget_settings')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('month_year', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const sorted = [...(allData || [])].sort((a, b) => b.month_year.localeCompare(a.month_year));
+        const prevData = sorted[0];
 
         const newSetting: BudgetSettings = {
           user_id: user.id,
@@ -435,6 +434,52 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     const alertWeekly = getAlertStatus(spentThisWeek, weeklyLimit);
     const alertMonthly = getAlertStatus(totalExpense, budgetNeeds + budgetWants);
 
+    // =========================================================================
+    // KALKULASI SISA UANG DARI BULAN SEBELUMNYA & TOTAL KESELURUHAN UANG (AKUMULATIF)
+    // =========================================================================
+    const monthKeys = new Set<string>();
+    allTransactions.forEach((t) => {
+      if (t.date && t.date.length >= 7) monthKeys.add(t.date.substring(0, 7));
+    });
+    allBudgetSettings.forEach((s) => {
+      if (s.month_year) monthKeys.add(s.month_year);
+    });
+
+    let previousMonthCarryover = 0;
+
+    monthKeys.forEach((m) => {
+      // Hanya hitung sisa dari bulan-bulan sebelum bulan terpilih (m < selectedMonthYear)
+      if (m < selectedMonthYear) {
+        const mIncomeTx = allTransactions
+          .filter((t) => t.date.startsWith(m) && t.type === 'income')
+          .reduce((sum, t) => sum + Number(t.amount), 0);
+
+        const mSetting = allBudgetSettings.find((s) => s.month_year === m);
+        const mBaseIncome = Number(mSetting?.monthly_income || 0);
+        const mTotalIncome = Math.max(mBaseIncome, mIncomeTx);
+
+        const mTotalExpense = allTransactions
+          .filter((t) => t.date.startsWith(m) && t.type === 'expense')
+          .reduce((sum, t) => sum + Number(t.amount), 0);
+
+        const mNetSavings = mTotalIncome - mTotalExpense;
+        previousMonthCarryover += mNetSavings;
+      }
+    });
+
+    // Total keseluruhan uang yang ada sampai bulan terpilih ini:
+    // (Akumulasi sisa uang dari bulan-bulan sebelumnya) + (Saldo bersih bulan ini)
+    const cumulativeTotalBalance = previousMonthCarryover + netSavings;
+
+    // Total saldo kas sepanjang masa (Lifetime seluruh transaksi)
+    const lifetimeIncome = allTransactions
+      .filter((t) => t.type === 'income')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+    const lifetimeExpense = allTransactions
+      .filter((t) => t.type === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+    const lifetimeTotalBalance = lifetimeIncome - lifetimeExpense;
+
     return {
       month_year: selectedMonthYear,
       income: totalIncome,
@@ -458,11 +503,14 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       remaining_this_week: remainingThisWeek,
       days_left_in_month: daysLeft,
       total_days_in_month: totalDays,
+      cumulative_total_balance: cumulativeTotalBalance,
+      previous_month_carryover: previousMonthCarryover,
+      lifetime_total_balance: lifetimeTotalBalance,
       alert_level_daily: alertDaily,
       alert_level_weekly: alertWeekly,
       alert_level_monthly: alertMonthly
     };
-  }, [transactions, budgetSettings, selectedMonthYear]);
+  }, [transactions, budgetSettings, selectedMonthYear, allTransactions, allBudgetSettings]);
 
   // =========================================================================
   // ANALISIS PERBANDINGAN ANTAR BULAN (MONTH-OVER-MONTH DATA)

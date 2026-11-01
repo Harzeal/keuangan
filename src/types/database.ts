@@ -71,6 +71,9 @@ export interface MonthSummary {
   remaining_this_week: number;
   days_left_in_month: number;
   total_days_in_month: number;
+  cumulative_total_balance: number;
+  previous_month_carryover: number;
+  lifetime_total_balance: number;
   alert_level_daily: 'safe' | 'warning' | 'danger';
   alert_level_weekly: 'safe' | 'warning' | 'danger';
   alert_level_monthly: 'safe' | 'warning' | 'danger';
