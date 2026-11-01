@@ -28,12 +28,25 @@ import { AddTransactionModal } from './components/transactions/AddTransactionMod
 import { CategoryManagerModal } from './components/transactions/CategoryManagerModal';
 import { ExportModal } from './components/export/ExportModal';
 import { ConfigModal } from './components/common/ConfigModal';
+import { NotificationSettingsModal } from './components/notifications/NotificationSettingsModal';
+import {
+  initServiceWorker,
+  checkAndTriggerScheduledNotifications,
+  fetchUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead
+} from './lib/notificationEngine';
+import { AppNotification } from './types/database';
 
 export const App: React.FC = () => {
   const { user, profile, loading: authLoading, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
 
   // State Bulan Terpilih (Format: 'YYYY-MM')
   const [selectedMonthYear, setSelectedMonthYear] = useState<string>(getCurrentMonthYear());
+
+  // State Notifikasi Terpadu (.apk / .app / .exe / web)
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [isNotifSettingsOpen, setIsNotifSettingsOpen] = useState<boolean>(false);
 
   // Privacy Mode (Sembunyikan angka saldo)
   const [privacyMode, setPrivacyMode] = useState<boolean>(() => {
@@ -78,6 +91,60 @@ export const App: React.FC = () => {
       localStorage.setItem('FINFLOW_THEME', 'light');
     }
   }, [darkMode]);
+
+  // Inisialisasi Service Worker untuk notifikasi PWA / OS / .apk / .exe
+  useEffect(() => {
+    initServiceWorker();
+  }, []);
+
+  // Muat riwayat notifikasi tersimpan saat user login
+  useEffect(() => {
+    if (user) {
+      fetchUserNotifications(user.id).then(setNotifications);
+    }
+  }, [user]);
+
+  // Pemeriksaan jadwal otomatis (Jam 20:00 Harian, Senin 2 Notif, Akhir Bulan)
+  useEffect(() => {
+    if (!user) return;
+
+    // Cek saat pertama kali buka
+    checkAndTriggerScheduledNotifications(user.id, transactions, summary).then((triggered) => {
+      if (triggered.length > 0) {
+        setNotifications((prev) => [...triggered, ...prev]);
+      }
+    });
+
+    // Cek setiap 30 detik untuk memastikan tepat jam 20:00 langsung terpicu
+    const interval = setInterval(() => {
+      checkAndTriggerScheduledNotifications(user.id, transactions, summary).then((triggered) => {
+        if (triggered.length > 0) {
+          setNotifications((prev) => [...triggered, ...prev]);
+        }
+      });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user, transactions, summary]);
+
+  const handleMarkNotifAsRead = async (id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    await markNotificationAsRead(id);
+  };
+
+  const handleMarkAllNotifAsRead = async () => {
+    if (!user) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    await markAllNotificationsAsRead(user.id);
+  };
+
+  const handleTriggerTestNotif = async () => {
+    if (!user) return;
+    const triggered = await checkAndTriggerScheduledNotifications(user.id, transactions, summary, true);
+    if (triggered.length > 0) {
+      setNotifications((prev) => [...triggered, ...prev]);
+    }
+  };
 
   const togglePrivacy = () => {
     setPrivacyMode((prev) => {
@@ -140,6 +207,10 @@ export const App: React.FC = () => {
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenConfigModal={() => setIsConfigModalOpen(true)}
+        notifications={notifications}
+        onMarkNotifAsRead={handleMarkNotifAsRead}
+        onMarkAllNotifAsRead={handleMarkAllNotifAsRead}
+        onOpenNotifSettings={() => setIsNotifSettingsOpen(true)}
       />
 
       {/* Main Container */}
@@ -270,6 +341,14 @@ export const App: React.FC = () => {
 
         {isConfigModalOpen && (
           <ConfigModal onClose={() => setIsConfigModalOpen(false)} />
+        )}
+
+        {isNotifSettingsOpen && (
+          <NotificationSettingsModal
+            onClose={() => setIsNotifSettingsOpen(false)}
+            onTriggerTest={handleTriggerTestNotif}
+            summary={summary}
+          />
         )}
       </AnimatePresence>
 

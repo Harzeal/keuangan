@@ -83,3 +83,17 @@ export interface SmartRecommendation {
   impactNominal?: number;
   category?: string;
 }
+
+export type NotificationType = 'daily' | 'weekly' | 'monthly' | 'alert' | 'system';
+
+export interface AppNotification {
+  id: string;
+  user_id?: string;
+  title: string;
+  body: string;
+  type: NotificationType;
+  reference_date: string;
+  is_read: boolean;
+  metadata?: Record<string, any>;
+  created_at?: string;
+}

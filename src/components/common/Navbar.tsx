@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { formatMonthYear, getCurrentMonthYear } from '../../lib/utils';
+import { NotificationCenter } from '../notifications/NotificationCenter';
+import { AppNotification } from '../../types/database';
 
 interface NavbarProps {
   selectedMonthYear: string;
@@ -28,6 +30,10 @@ interface NavbarProps {
   onOpenAddModal: () => void;
   onOpenExportModal: () => void;
   onOpenConfigModal: () => void;
+  notifications: AppNotification[];
+  onMarkNotifAsRead: (id: string) => Promise<void>;
+  onMarkAllNotifAsRead: () => Promise<void>;
+  onOpenNotifSettings: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -39,7 +45,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleDarkMode,
   onOpenAddModal,
   onOpenExportModal,
-  onOpenConfigModal
+  onOpenConfigModal,
+  notifications,
+  onMarkNotifAsRead,
+  onMarkAllNotifAsRead,
+  onOpenNotifSettings
 }) => {
   const { user, profile, signOut } = useAuth();
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -170,6 +180,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
+
+            {/* Notification Center (Pengingat 20:00 & Rekap) */}
+            <NotificationCenter
+              notifications={notifications}
+              onMarkAsRead={onMarkNotifAsRead}
+              onMarkAllAsRead={onMarkAllNotifAsRead}
+              onOpenSettings={onOpenNotifSettings}
+            />
 
             {/* Database / Supabase Info */}
             <button

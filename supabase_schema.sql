@@ -73,17 +73,34 @@ ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS main_category TEXT DEFA
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS category_name TEXT DEFAULT 'Lainnya';
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL;
 
--- 6. INDEXING UNTUK PERFORMA TINGGI
+-- 6. TABEL NOTIFIKASI PENGGUNA (USER NOTIFICATIONS)
+-- Menyimpan riwayat notifikasi harian, mingguan, bulanan yang tersinkronisasi lintas platform (.apk, .exe, web)
+CREATE TABLE IF NOT EXISTS public.user_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('daily', 'weekly', 'monthly', 'alert', 'system')),
+    reference_date TEXT NOT NULL, -- Format 'YYYY-MM-DD', 'YYYY-Wxx', atau 'YYYY-MM'
+    is_read BOOLEAN NOT NULL DEFAULT false,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    CONSTRAINT unique_user_notif_period UNIQUE (user_id, type, reference_date)
+);
+
+-- 7. INDEXING UNTUK PERFORMA TINGGI
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON public.transactions (user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_type ON public.transactions (user_id, type);
 CREATE INDEX IF NOT EXISTS idx_budget_settings_user_month ON public.budget_settings (user_id, month_year);
 CREATE INDEX IF NOT EXISTS idx_categories_user ON public.categories (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_notifications_user ON public.user_notifications (user_id, created_at DESC);
 
--- 7. AKTIFKAN ROW LEVEL SECURITY (RLS)
+-- 8. AKTIFKAN ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budget_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_notifications ENABLE ROW LEVEL SECURITY;
 
 -- 8. KEBIJAKAN AKSES (POLICIES)
 -- Profiles
@@ -113,6 +130,10 @@ CREATE POLICY "User can delete own categories" ON public.categories FOR DELETE U
 -- Transactions
 DROP POLICY IF EXISTS "User can manage own transactions" ON public.transactions;
 CREATE POLICY "User can manage own transactions" ON public.transactions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- User Notifications
+DROP POLICY IF EXISTS "User can manage own notifications" ON public.user_notifications;
+CREATE POLICY "User can manage own notifications" ON public.user_notifications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- 9. POPULASI KATEGORI BAWAAN STANDAR (GLOBAL: user_id = NULL)
 -- Kategori ini langsung tersedia dan bisa dibaca oleh semua pengguna baru maupun lama
