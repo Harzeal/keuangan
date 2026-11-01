@@ -1,6 +1,6 @@
 {
-  "name": "FinFlow — Personal Finance & Smart Budget Tracker",
-  "short_name": "FinFlow",
+  "name": "Finance — Personal Finance & Smart Budget Tracker",
+  "short_name": "Finance",
   "description": "Aplikasi pencatat keuangan pribadi dengan alokasi 50/30/20, limit harian & pengingat pintar",
   "start_url": "/",
   "display": "standalone",

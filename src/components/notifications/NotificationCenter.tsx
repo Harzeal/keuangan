@@ -82,7 +82,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -10 }}
               transition={{ duration: 0.15 }}
-              className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-800 p-4 z-50 divide-y divide-slate-100 dark:divide-slate-800/80"
+              className="absolute -right-12 sm:right-0 mt-2 w-[calc(100vw-1.5rem)] max-w-sm sm:w-96 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-800 p-4 z-50 divide-y divide-slate-100 dark:divide-slate-800/80"
             >
               
               {/* Header */}
