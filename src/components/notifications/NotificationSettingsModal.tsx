@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   getNotificationPermissionStatus,
+  checkNotificationPermissionAsync,
   requestNotificationPermission,
   showSystemNotification
 } from '../../lib/notificationEngine';
@@ -48,6 +49,13 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  // Cek izin secara async (khusus native Android Capacitor & browser)
+  useEffect(() => {
+    checkNotificationPermissionAsync().then((status) => {
+      setPermission(status);
+    });
+  }, []);
 
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();

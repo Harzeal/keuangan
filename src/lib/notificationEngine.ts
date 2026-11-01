@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { AppNotification, NotificationType, Transaction, MonthSummary } from '../types/database';
 import { formatRupiah, formatMonthYear, getMonthDaysInfo } from './utils';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 // Helper Service Worker registration
 let swRegistration: ServiceWorkerRegistration | null = null;
@@ -24,6 +26,40 @@ export async function initServiceWorker(): Promise<ServiceWorkerRegistration | n
  * Cek status izin notifikasi sistem OS (Windows / Android / iOS / Mac)
  */
 export function getNotificationPermissionStatus(): NotificationPermission {
+  if (Capacitor.isNativePlatform()) {
+    const cached = localStorage.getItem('CAPACITOR_NOTIF_PERMISSION');
+    if (cached === 'granted') return 'granted';
+    if (cached === 'denied') return 'denied';
+    return 'default';
+  }
+
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'denied';
+  }
+  return Notification.permission;
+}
+
+/**
+ * Cek status izin notifikasi secara asynchronous (akurat untuk Android native Capacitor)
+ */
+export async function checkNotificationPermissionAsync(): Promise<NotificationPermission> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const status = await LocalNotifications.checkPermissions();
+      if (status.display === 'granted') {
+        localStorage.setItem('CAPACITOR_NOTIF_PERMISSION', 'granted');
+        return 'granted';
+      }
+      if (status.display === 'denied') {
+        localStorage.setItem('CAPACITOR_NOTIF_PERMISSION', 'denied');
+        return 'denied';
+      }
+      return 'default';
+    } catch {
+      return 'default';
+    }
+  }
+
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'denied';
   }
@@ -32,8 +68,26 @@ export function getNotificationPermissionStatus(): NotificationPermission {
 
 /**
  * Minta izin notifikasi ke pengguna
+ * Mendukung Android Native Dialog (POST_NOTIFICATIONS) dan Browser Web Notification
  */
 export async function requestNotificationPermission(): Promise<boolean> {
+  // 1. Jika di Android APK (Capacitor Native)
+  if (Capacitor.isNativePlatform()) {
+    try {
+      let status = await LocalNotifications.checkPermissions();
+      if (status.display !== 'granted') {
+        status = await LocalNotifications.requestPermissions();
+      }
+      const granted = status.display === 'granted';
+      localStorage.setItem('CAPACITOR_NOTIF_PERMISSION', granted ? 'granted' : 'denied');
+      return granted;
+    } catch (err) {
+      console.error('Error saat meminta izin notifikasi native Android:', err);
+      return false;
+    }
+  }
+
+  // 2. Jika di Browser Web / PWA
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return false;
   }
@@ -42,7 +96,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
     const result = await Notification.requestPermission();
     return result === 'granted';
   } catch (err) {
-    console.error('Error saat meminta izin notifikasi:', err);
+    console.error('Error saat meminta izin notifikasi web:', err);
     return false;
   }
 }
@@ -60,6 +114,28 @@ export async function showSystemNotification(
     data?: any;
   }
 ) {
+  // 1. Jika di Android APK (Capacitor Native) -> Muncul langsung di Status Bar HP Android
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const notifId = Math.floor(Math.random() * 2147483647);
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: notifId,
+            title: title,
+            body: options.body,
+            schedule: { at: new Date(Date.now() + 250) },
+            extra: options.data
+          }
+        ]
+      });
+      return;
+    } catch (err) {
+      console.error('Error memicu notifikasi native Android:', err);
+    }
+  }
+
+  // 2. Jika di Web / PWA Browser
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return;
   }
@@ -78,7 +154,7 @@ export async function showSystemNotification(
     requireInteraction: false
   };
 
-  // 1. Coba lewat Service Worker Registration (Rekomendasi PWA / Android)
+  // Coba lewat Service Worker Registration (Rekomendasi PWA / Android Web)
   if (swRegistration && 'showNotification' in swRegistration) {
     try {
       await swRegistration.showNotification(title, notificationOptions);
@@ -88,7 +164,7 @@ export async function showSystemNotification(
     }
   }
 
-  // 2. Fallback ke Web Notification standar
+  // Fallback ke Web Notification standar
   try {
     new Notification(title, notificationOptions);
   } catch (err) {
