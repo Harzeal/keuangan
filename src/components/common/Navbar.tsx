@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wallet,
@@ -53,6 +53,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, profile, signOut } = useAuth();
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  // Tutup dropdown profil jika Escape ditekan
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && userDropdownOpen) {
+        setUserDropdownOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [userDropdownOpen]);
 
   // Navigasi bulan: mundur 1 bulan
   const handlePrevMonth = () => {

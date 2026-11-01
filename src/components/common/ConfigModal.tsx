@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   X,
@@ -26,6 +26,17 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({ onClose }) => {
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
+  // Tutup modal ketika tombol Escape (ESC) ditekan
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     saveCustomCredentials(urlInput, keyInput);
@@ -41,7 +52,12 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -50,8 +66,10 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({ onClose }) => {
       >
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+          title="Tutup (Esc)"
+          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1"
         >
+          <span className="text-[10px] font-semibold text-slate-400 hidden sm:inline">Esc</span>
           <X className="w-5 h-5" />
         </button>
 

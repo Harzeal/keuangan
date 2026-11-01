@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   X,
@@ -37,6 +37,17 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   });
   const [testSent, setTestSent] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+
+  // Tutup modal ketika tombol Escape (ESC) ditekan
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();
@@ -79,7 +90,12 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -88,8 +104,10 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
       >
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+          title="Tutup Pengaturan (Esc)"
+          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1"
         >
+          <span className="text-[10px] font-semibold text-slate-400 hidden sm:inline">Esc</span>
           <X className="w-5 h-5" />
         </button>
 
@@ -255,6 +273,16 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
           <p className="leading-relaxed text-[11px]">
             Sistem notifikasi ini menggunakan standar <b>Service Worker & Web Notification API</b> yang tersinkronisasi ke database cloud Supabase. Saat website ini di-convert menjadi <b>.apk (Android)</b>, <b>.app (iOS/macOS)</b>, atau <b>.exe (Windows Desktop)</b>, notifikasi akan langsung terhubung ke sistem notifikasi native perangkat Anda tanpa perlu penulisan ulang!
           </p>
+        </div>
+
+        {/* Tombol Tutup / Selesai */}
+        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold transition shadow-sm"
+          >
+            Selesai / Tutup (Esc)
+          </button>
         </div>
 
       </motion.div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -43,6 +43,17 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Tutup modal ketika tombol Escape (ESC) ditekan
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -68,7 +79,12 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
   const userCustomCategories = categories.filter((c) => !c.is_default);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -77,8 +93,10 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
       >
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+          title="Tutup (Esc)"
+          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1"
         >
+          <span className="text-[10px] font-semibold text-slate-400 hidden sm:inline">Esc</span>
           <X className="w-5 h-5" />
         </button>
 
@@ -245,6 +263,16 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
               ))
             )}
           </div>
+        </div>
+
+        {/* Tombol Selesai */}
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold transition shadow-sm"
+          >
+            Selesai / Tutup (Esc)
+          </button>
         </div>
 
       </motion.div>
