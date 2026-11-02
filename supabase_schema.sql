@@ -88,21 +88,58 @@ CREATE TABLE IF NOT EXISTS public.user_notifications (
     CONSTRAINT unique_user_notif_period UNIQUE (user_id, type, reference_date)
 );
 
--- 7. INDEXING UNTUK PERFORMA TINGGI
+-- 7. TABEL MULTI-DOMPET / REKENING BANK (WALLETS)
+CREATE TABLE IF NOT EXISTS public.wallets (
+    id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'ewallet', 'investment', 'other')),
+    initial_balance NUMERIC(15, 2) NOT NULL DEFAULT 0,
+    color TEXT NOT NULL DEFAULT '#10b981',
+    icon TEXT NOT NULL DEFAULT 'Wallet',
+    account_number TEXT,
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 8. TABEL TRANSAKSI BERULANG / TAGIHAN RUTIN (RECURRING TRANSACTIONS)
+CREATE TABLE IF NOT EXISTS public.recurring_transactions (
+    id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    amount NUMERIC(15, 2) NOT NULL CHECK (amount > 0),
+    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    main_category TEXT NOT NULL CHECK (main_category IN ('needs', 'wants', 'savings', 'income')),
+    category_name TEXT NOT NULL DEFAULT 'Lainnya',
+    wallet_name TEXT DEFAULT 'Kas / Tunai',
+    frequency TEXT NOT NULL DEFAULT 'monthly' CHECK (frequency IN ('daily', 'weekly', 'monthly', 'yearly')),
+    day_of_month INTEGER NOT NULL DEFAULT 1,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_processed_month TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 9. INDEXING UNTUK PERFORMA TINGGI
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON public.transactions (user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_type ON public.transactions (user_id, type);
 CREATE INDEX IF NOT EXISTS idx_budget_settings_user_month ON public.budget_settings (user_id, month_year);
 CREATE INDEX IF NOT EXISTS idx_categories_user ON public.categories (user_id);
 CREATE INDEX IF NOT EXISTS idx_user_notifications_user ON public.user_notifications (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallets_user ON public.wallets (user_id);
+CREATE INDEX IF NOT EXISTS idx_recurring_user ON public.recurring_transactions (user_id);
 
--- 8. AKTIFKAN ROW LEVEL SECURITY (RLS)
+-- 10. AKTIFKAN ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budget_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recurring_transactions ENABLE ROW LEVEL SECURITY;
 
--- 8. KEBIJAKAN AKSES (POLICIES)
+-- 11. KEBIJAKAN AKSES (POLICIES)
 -- Profiles
 DROP POLICY IF EXISTS "User can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "User can update own profile" ON public.profiles;
@@ -134,6 +171,14 @@ CREATE POLICY "User can manage own transactions" ON public.transactions FOR ALL 
 -- User Notifications
 DROP POLICY IF EXISTS "User can manage own notifications" ON public.user_notifications;
 CREATE POLICY "User can manage own notifications" ON public.user_notifications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- Wallets
+DROP POLICY IF EXISTS "User can manage own wallets" ON public.wallets;
+CREATE POLICY "User can manage own wallets" ON public.wallets FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- Recurring Transactions
+DROP POLICY IF EXISTS "User can manage own recurring" ON public.recurring_transactions;
+CREATE POLICY "User can manage own recurring" ON public.recurring_transactions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- 9. POPULASI KATEGORI BAWAAN STANDAR (GLOBAL: user_id = NULL)
 -- Kategori ini langsung tersedia dan bisa dibaca oleh semua pengguna baru maupun lama

@@ -13,6 +13,42 @@ import {
 } from '../types/database';
 import { getCurrentMonthYear, getMonthDaysInfo, getAlertStatus } from '../lib/utils';
 
+const DEFAULT_WALLETS: Wallet[] = [
+  { id: 'w_cash', name: 'Kas / Tunai', type: 'cash', initial_balance: 0, color: '#10b981', icon: 'Wallet', is_default: true },
+  { id: 'w_bank', name: 'Rekening Bank', type: 'bank', initial_balance: 0, color: '#3b82f6', icon: 'Landmark' },
+  { id: 'w_ewallet', name: 'E-Wallet', type: 'ewallet', initial_balance: 0, color: '#8b5cf6', icon: 'Smartphone' }
+];
+
+const discoverWalletsFromTx = (txList: Transaction[], currentWallets: Wallet[]): Wallet[] => {
+  const existingNames = new Set(currentWallets.map((w) => w.name.trim().toLowerCase()));
+  const newWallets: Wallet[] = [];
+
+  txList.forEach((t) => {
+    const candidateNames = [t.wallet_name, t.transfer_from, t.transfer_to].filter(Boolean) as string[];
+    candidateNames.forEach((raw) => {
+      const name = raw.trim();
+      if (!name) return;
+      const lower = name.toLowerCase();
+      if (lower === 'kas / tunai' || lower === 'rekening bank' || lower === 'e-wallet') return;
+      if (!existingNames.has(lower) && !newWallets.some((w) => w.name.trim().toLowerCase() === lower)) {
+        const isBank = /bank|bni|bca|bri|mandiri|bsi|cimb|btn|permata|danamon/i.test(name);
+        const isEwallet = /dana|gopay|ovo|shopeepay|shopee|linkaja/i.test(name);
+        newWallets.push({
+          id: `wallet_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: name,
+          type: isBank ? 'bank' : isEwallet ? 'ewallet' : 'other',
+          initial_balance: 0,
+          color: isBank ? '#3b82f6' : isEwallet ? '#0086e0' : '#10b981',
+          icon: isBank ? 'Landmark' : isEwallet ? 'Smartphone' : 'Wallet'
+        });
+        existingNames.add(lower);
+      }
+    });
+  });
+
+  return newWallets;
+};
+
 export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
   const { user } = useAuth();
 
@@ -31,28 +67,75 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
 
-  // State Multi-Dompet (Wallets)
+  // =========================================================================
+  // STATE MULTI-DOMPET (WALLETS) & SINKRONISASI SUPABASE
+  // =========================================================================
   const [wallets, setWallets] = useState<Wallet[]>(() => {
-    if (typeof window === 'undefined') return [
-      { id: 'w_cash', name: 'Kas / Tunai', type: 'cash', initial_balance: 0, color: '#10b981', icon: 'Wallet', is_default: true },
-      { id: 'w_bank', name: 'Rekening Bank', type: 'bank', initial_balance: 0, color: '#3b82f6', icon: 'Landmark' },
-      { id: 'w_ewallet', name: 'E-Wallet', type: 'ewallet', initial_balance: 0, color: '#8b5cf6', icon: 'Smartphone' }
-    ];
+    if (typeof window === 'undefined') return DEFAULT_WALLETS;
     const saved = localStorage.getItem('FINFLOW_WALLETS');
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
     }
-    return [
-      { id: 'w_cash', name: 'Kas / Tunai', type: 'cash', initial_balance: 0, color: '#10b981', icon: 'Wallet', is_default: true },
-      { id: 'w_bank', name: 'Rekening Bank', type: 'bank', initial_balance: 0, color: '#3b82f6', icon: 'Landmark' },
-      { id: 'w_ewallet', name: 'E-Wallet', type: 'ewallet', initial_balance: 0, color: '#8b5cf6', icon: 'Smartphone' }
-    ];
+    return DEFAULT_WALLETS;
   });
 
-  const saveWallets = (newWallets: Wallet[]) => {
+  // Sinkronisasi data dompet ke Supabase (Tabel wallets, user_metadata, & budget_settings CONFIG_WALLETS)
+  const syncWalletsToCloud = useCallback(async (walletsToSync: Wallet[], userId: string) => {
+    // 1. Simpan ke budget_settings (CONFIG_WALLETS)
+    try {
+      await supabase.from('budget_settings').upsert({
+        user_id: userId,
+        month_year: 'CONFIG_WALLETS',
+        monthly_income: 0,
+        needs_percentage: 0,
+        wants_percentage: 0,
+        savings_percentage: 0,
+        notes: JSON.stringify(walletsToSync),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,month_year' });
+    } catch (e) {
+      console.warn('Gagal sync wallets ke budget_settings:', e);
+    }
+
+    // 2. Simpan ke metadata auth Supabase (tersedia langsung saat login di HP)
+    try {
+      await supabase.auth.updateUser({
+        data: { finflow_wallets: walletsToSync }
+      });
+    } catch (e) {
+      console.warn('Gagal sync wallets ke user_metadata:', e);
+    }
+
+    // 3. Simpan ke tabel public.wallets (jika user sudah menjalankan SQL di Supabase)
+    try {
+      const payload = walletsToSync.map((w) => ({
+        id: w.id,
+        user_id: userId,
+        name: w.name,
+        type: w.type,
+        initial_balance: w.initial_balance || 0,
+        color: w.color || '#3b82f6',
+        icon: w.icon || 'Wallet',
+        account_number: w.account_number || null,
+        is_default: Boolean(w.is_default),
+        updated_at: new Date().toISOString()
+      }));
+      await supabase.from('wallets').upsert(payload, { onConflict: 'id' });
+    } catch (e) {
+      // Abaikan jika tabel belum ada
+    }
+  }, []);
+
+  const saveWallets = useCallback((newWallets: Wallet[]) => {
     setWallets(newWallets);
     localStorage.setItem('FINFLOW_WALLETS', JSON.stringify(newWallets));
-  };
+    if (user) {
+      syncWalletsToCloud(newWallets, user.id);
+    }
+  }, [user, syncWalletsToCloud]);
 
   const addWallet = (wallet: Omit<Wallet, 'id'>) => {
     const newW: Wallet = {
@@ -62,28 +145,192 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     saveWallets([...wallets, newW]);
   };
 
-  const deleteWallet = (id: string) => {
-    saveWallets(wallets.filter((w) => w.id !== id));
+  const deleteWallet = async (id: string) => {
+    const remaining = wallets.filter((w) => w.id !== id);
+    setWallets(remaining);
+    localStorage.setItem('FINFLOW_WALLETS', JSON.stringify(remaining));
+
+    if (user) {
+      try {
+        await supabase.from('wallets').delete().eq('id', id).eq('user_id', user.id);
+      } catch (e) {}
+      syncWalletsToCloud(remaining, user.id);
+    }
   };
 
   const updateWallet = (updated: Wallet) => {
-    saveWallets(wallets.map((w) => (w.id === updated.id ? updated : w)));
+    const newWallets = wallets.map((w) => (w.id === updated.id ? updated : w));
+    saveWallets(newWallets);
   };
 
-  // State Transaksi Berulang (Recurring Bills)
+  const fetchWallets = useCallback(async () => {
+    if (!user) return;
+    try {
+      let cloudWallets: Wallet[] | null = null;
+
+      // 1. Coba ambil dari tabel public.wallets
+      try {
+        const { data, error } = await supabase
+          .from('wallets')
+          .select('*')
+          .eq('user_id', user.id);
+
+        if (!error && data && data.length > 0) {
+          cloudWallets = data as Wallet[];
+        }
+      } catch (e) {}
+
+      // 2. Jika belum ada di tabel wallets, coba ambil dari budget_settings (CONFIG_WALLETS)
+      if (!cloudWallets || cloudWallets.length === 0) {
+        try {
+          const { data, error } = await supabase
+            .from('budget_settings')
+            .select('notes')
+            .eq('user_id', user.id)
+            .eq('month_year', 'CONFIG_WALLETS')
+            .maybeSingle();
+
+          if (!error && data?.notes) {
+            const parsed = JSON.parse(data.notes);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              cloudWallets = parsed;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 3. Jika masih belum ada, coba ambil dari user_metadata Supabase Auth
+      if (!cloudWallets || cloudWallets.length === 0) {
+        try {
+          const { data: { user: freshUser } } = await supabase.auth.getUser();
+          const metaWallets = freshUser?.user_metadata?.finflow_wallets;
+          if (Array.isArray(metaWallets) && metaWallets.length > 0) {
+            cloudWallets = metaWallets;
+          }
+        } catch (e) {}
+      }
+
+      // 4. Periksa apakah perangkat ini (misal Laptop) memiliki dompet kustom di localStorage lokal
+      const localSaved = localStorage.getItem('FINFLOW_WALLETS');
+      let localWallets: Wallet[] | null = null;
+      if (localSaved) {
+        try {
+          const parsed = JSON.parse(localSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            localWallets = parsed;
+          }
+        } catch (e) {}
+      }
+
+      const hasCustomInLocal = Boolean(
+        localWallets &&
+        localWallets.some(
+          (w) => !['w_cash', 'w_bank', 'w_ewallet'].includes(w.id) || (w.initial_balance && w.initial_balance > 0)
+        )
+      );
+
+      let finalWallets: Wallet[] = [];
+
+      if (cloudWallets && cloudWallets.length > 0) {
+        if (hasCustomInLocal && localWallets) {
+          const merged = [...cloudWallets];
+          localWallets.forEach((lw) => {
+            if (!merged.some((cw) => cw.id === lw.id || cw.name.trim().toLowerCase() === lw.name.trim().toLowerCase())) {
+              merged.push(lw);
+            }
+          });
+          finalWallets = merged;
+          if (merged.length > cloudWallets.length) {
+            syncWalletsToCloud(merged, user.id);
+          }
+        } else {
+          finalWallets = cloudWallets;
+        }
+      } else if (hasCustomInLocal && localWallets) {
+        // Laptop memiliki dompet kustom dan cloud masih kosong -> otomatis upload ke cloud
+        finalWallets = localWallets;
+        syncWalletsToCloud(finalWallets, user.id);
+      } else {
+        finalWallets = localWallets && localWallets.length > 0 ? localWallets : DEFAULT_WALLETS;
+      }
+
+      setWallets(finalWallets);
+      localStorage.setItem('FINFLOW_WALLETS', JSON.stringify(finalWallets));
+    } catch (err: any) {
+      console.warn('Gagal fetch wallets:', err.message);
+    }
+  }, [user, syncWalletsToCloud]);
+
+  // =========================================================================
+  // STATE TRANSAKSI BERULANG (RECURRING BILLS) & SINKRONISASI SUPABASE
+  // =========================================================================
   const [recurringList, setRecurringList] = useState<RecurringTransaction[]>(() => {
     if (typeof window === 'undefined') return [];
     const saved = localStorage.getItem('FINFLOW_RECURRING');
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
     }
     return [];
   });
 
-  const saveRecurring = (list: RecurringTransaction[]) => {
+  const syncRecurringToCloud = useCallback(async (listToSync: RecurringTransaction[], userId: string) => {
+    // 1. Simpan ke budget_settings (CONFIG_RECURRING)
+    try {
+      await supabase.from('budget_settings').upsert({
+        user_id: userId,
+        month_year: 'CONFIG_RECURRING',
+        monthly_income: 0,
+        needs_percentage: 0,
+        wants_percentage: 0,
+        savings_percentage: 0,
+        notes: JSON.stringify(listToSync),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,month_year' });
+    } catch (e) {
+      console.warn('Gagal sync recurring ke budget_settings:', e);
+    }
+
+    // 2. Simpan ke Supabase Auth user_metadata
+    try {
+      await supabase.auth.updateUser({
+        data: { finflow_recurring: listToSync }
+      });
+    } catch (e) {
+      console.warn('Gagal sync recurring ke user_metadata:', e);
+    }
+
+    // 3. Simpan ke tabel public.recurring_transactions jika tabel ada
+    try {
+      const payload = listToSync.map((r) => ({
+        id: r.id,
+        user_id: userId,
+        title: r.title,
+        amount: r.amount,
+        type: r.type,
+        main_category: r.main_category,
+        category_name: r.category_name,
+        wallet_name: r.wallet_name || 'Kas / Tunai',
+        frequency: r.frequency,
+        day_of_month: r.day_of_month,
+        is_active: r.is_active,
+        last_processed_month: r.last_processed_month || null,
+        notes: r.notes || null,
+        created_at: new Date().toISOString()
+      }));
+      await supabase.from('recurring_transactions').upsert(payload, { onConflict: 'id' });
+    } catch (e) {}
+  }, []);
+
+  const saveRecurring = useCallback((list: RecurringTransaction[]) => {
     setRecurringList(list);
     localStorage.setItem('FINFLOW_RECURRING', JSON.stringify(list));
-  };
+    if (user) {
+      syncRecurringToCloud(list, user.id);
+    }
+  }, [user, syncRecurringToCloud]);
 
   const addRecurring = (item: Omit<RecurringTransaction, 'id'>) => {
     const newItem: RecurringTransaction = {
@@ -93,13 +340,94 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     saveRecurring([...recurringList, newItem]);
   };
 
-  const deleteRecurring = (id: string) => {
-    saveRecurring(recurringList.filter((r) => r.id !== id));
+  const deleteRecurring = async (id: string) => {
+    const remaining = recurringList.filter((r) => r.id !== id);
+    setRecurringList(remaining);
+    localStorage.setItem('FINFLOW_RECURRING', JSON.stringify(remaining));
+
+    if (user) {
+      try {
+        await supabase.from('recurring_transactions').delete().eq('id', id).eq('user_id', user.id);
+      } catch (e) {}
+      syncRecurringToCloud(remaining, user.id);
+    }
   };
 
   const toggleRecurring = (id: string) => {
-    saveRecurring(recurringList.map((r) => (r.id === id ? { ...r, is_active: !r.is_active } : r)));
+    const updated = recurringList.map((r) => (r.id === id ? { ...r, is_active: !r.is_active } : r));
+    saveRecurring(updated);
   };
+
+  const fetchRecurring = useCallback(async () => {
+    if (!user) return;
+    try {
+      let cloudRec: RecurringTransaction[] | null = null;
+
+      // 1. Coba tabel public.recurring_transactions
+      try {
+        const { data, error } = await supabase
+          .from('recurring_transactions')
+          .select('*')
+          .eq('user_id', user.id);
+        if (!error && data && data.length > 0) {
+          cloudRec = data as RecurringTransaction[];
+        }
+      } catch (e) {}
+
+      // 2. Coba budget_settings (CONFIG_RECURRING)
+      if (!cloudRec || cloudRec.length === 0) {
+        try {
+          const { data, error } = await supabase
+            .from('budget_settings')
+            .select('notes')
+            .eq('user_id', user.id)
+            .eq('month_year', 'CONFIG_RECURRING')
+            .maybeSingle();
+
+          if (!error && data?.notes) {
+            const parsed = JSON.parse(data.notes);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              cloudRec = parsed;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 3. Coba user_metadata
+      if (!cloudRec || cloudRec.length === 0) {
+        try {
+          const { data: { user: freshUser } } = await supabase.auth.getUser();
+          const metaRec = freshUser?.user_metadata?.finflow_recurring;
+          if (Array.isArray(metaRec) && metaRec.length > 0) {
+            cloudRec = metaRec;
+          }
+        } catch (e) {}
+      }
+
+      // 4. Cek local
+      const localSaved = localStorage.getItem('FINFLOW_RECURRING');
+      let localRec: RecurringTransaction[] | null = null;
+      if (localSaved) {
+        try {
+          const parsed = JSON.parse(localSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) localRec = parsed;
+        } catch (e) {}
+      }
+
+      let finalRec: RecurringTransaction[] = [];
+      if (cloudRec && cloudRec.length > 0) {
+        finalRec = cloudRec;
+      } else if (localRec && localRec.length > 0) {
+        finalRec = localRec;
+        syncRecurringToCloud(finalRec, user.id);
+      }
+
+      setRecurringList(finalRec);
+      localStorage.setItem('FINFLOW_RECURRING', JSON.stringify(finalRec));
+    } catch (err: any) {
+      console.warn('Gagal fetch recurring:', err.message);
+    }
+  }, [user, syncRecurringToCloud]);
 
   // Ambil data kategori
   const fetchCategories = useCallback(async () => {
@@ -134,8 +462,11 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         .eq('user_id', user.id);
 
       if (allData) {
-        setAllBudgetSettings(allData as BudgetSettings[]);
-        localStorage.setItem(`FINFLOW_CACHE_BUDGET_${user.id}`, JSON.stringify(allData));
+        const validBudgetList = (allData as BudgetSettings[]).filter(
+          (s) => s.month_year && /^\d{4}-\d{2}$/.test(s.month_year)
+        );
+        setAllBudgetSettings(validBudgetList);
+        localStorage.setItem(`FINFLOW_CACHE_BUDGET_${user.id}`, JSON.stringify(validBudgetList));
       }
 
       const current = allData?.find((s) => s.month_year === selectedMonthYear);
@@ -143,7 +474,9 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         setBudgetSettings(current as BudgetSettings);
       } else {
         // Coba cari bulan sebelumnya sebagai acuan default alokasi
-        const sorted = [...(allData || [])].sort((a, b) => b.month_year.localeCompare(a.month_year));
+        const sorted = [...(allData || [])]
+          .filter((s) => s.month_year && /^\d{4}-\d{2}$/.test(s.month_year))
+          .sort((a, b) => b.month_year.localeCompare(a.month_year));
         const prevData = sorted[0];
 
         const newSetting: BudgetSettings = {
@@ -253,6 +586,18 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         const formattedAll = formatTxList(allData || []);
         setAllTransactions(formattedAll);
         localStorage.setItem(`FINFLOW_CACHE_ALL_TX_${user.id}`, JSON.stringify(formattedAll));
+
+        // Auto-discover dompet dari transaksi yang tersimpan di Supabase
+        setWallets((prevWallets) => {
+          const discovered = discoverWalletsFromTx(formattedAll, prevWallets);
+          if (discovered.length > 0) {
+            const merged = [...prevWallets, ...discovered];
+            localStorage.setItem('FINFLOW_WALLETS', JSON.stringify(merged));
+            syncWalletsToCloud(merged, user.id);
+            return merged;
+          }
+          return prevWallets;
+        });
       }
     } catch (err: any) {
       console.error('Error fetching transactions (menggunakan cache lokal jika ada):', err);
@@ -275,7 +620,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     } finally {
       setLoading(false);
     }
-  }, [user, selectedMonthYear]);
+  }, [user, selectedMonthYear, syncWalletsToCloud]);
 
   // Pantau status koneksi online / offline
   useEffect(() => {
@@ -285,6 +630,8 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         fetchCategories();
         fetchBudgetSettings();
         fetchTransactions();
+        fetchWallets();
+        fetchRecurring();
       }
     };
     const handleOffline = () => setIsOffline(true);
@@ -294,13 +641,19 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [user, fetchCategories, fetchBudgetSettings, fetchTransactions]);
+  }, [user, fetchCategories, fetchBudgetSettings, fetchTransactions, fetchWallets, fetchRecurring]);
 
   useEffect(() => {
     if (user) {
-      Promise.all([fetchCategories(), fetchBudgetSettings(), fetchTransactions()]);
+      Promise.all([
+        fetchCategories(),
+        fetchBudgetSettings(),
+        fetchTransactions(),
+        fetchWallets(),
+        fetchRecurring()
+      ]);
     }
-  }, [user, selectedMonthYear, fetchCategories, fetchBudgetSettings, fetchTransactions]);
+  }, [user, selectedMonthYear, fetchCategories, fetchBudgetSettings, fetchTransactions, fetchWallets, fetchRecurring]);
 
   // Simpan / update Budget Settings ke Supabase
   const saveBudgetSettings = async (newSettings: Partial<BudgetSettings>) => {
@@ -662,7 +1015,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       if (t.date && t.date.length >= 7) monthKeys.add(t.date.substring(0, 7));
     });
     allBudgetSettings.forEach((s) => {
-      if (s.month_year) monthKeys.add(s.month_year);
+      if (s.month_year && /^\d{4}-\d{2}$/.test(s.month_year)) monthKeys.add(s.month_year);
     });
 
     let pastMonthsSavings = 0;
@@ -1014,6 +1367,8 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       fetchCategories();
       fetchBudgetSettings();
       fetchTransactions();
+      fetchWallets();
+      fetchRecurring();
     }
   };
 }
