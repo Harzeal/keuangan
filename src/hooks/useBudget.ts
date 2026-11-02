@@ -436,9 +436,12 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         }
         setAllTransactions((prev) => [formattedTx, ...prev]);
 
-        // Jika transaksi berupa pemasukan dan monthly_income masih 0, otomatis perbarui monthly_income
-        if (data.type === 'income' && budgetSettings.monthly_income === 0) {
-          saveBudgetSettings({ monthly_income: data.amount });
+        // Jika transaksi berupa pemasukan dan bukan transfer pada bulan terpilih, akumulasikan totalnya
+        if (data.type === 'income' && !isTransfer && data.date.startsWith(selectedMonthYear)) {
+          const currentMonthIncomeTx = [formattedTx, ...transactions]
+            .filter((t) => t.type === 'income' && !t.is_transfer && t.date.startsWith(selectedMonthYear));
+          const totalMonthIncome = currentMonthIncomeTx.reduce((sum, t) => sum + Number(t.amount), 0);
+          saveBudgetSettings({ monthly_income: totalMonthIncome });
         }
 
         return { error: null, data: formattedTx };
@@ -454,6 +457,8 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
   const deleteTransaction = async (id: string) => {
     if (!user) return { error: new Error('User tidak ditemukan') };
     try {
+      const txToDelete = transactions.find((t) => t.id === id);
+
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -464,6 +469,15 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
 
       setTransactions((prev) => prev.filter((t) => t.id !== id));
       setAllTransactions((prev) => prev.filter((t) => t.id !== id));
+
+      // Jika yang dihapus adalah transaksi pemasukan, update kembali monthly_income
+      if (txToDelete?.type === 'income' && !txToDelete.is_transfer && txToDelete.date.startsWith(selectedMonthYear)) {
+        const remainingMonthIncome = transactions
+          .filter((t) => t.id !== id && t.type === 'income' && !t.is_transfer && t.date.startsWith(selectedMonthYear))
+          .reduce((sum, t) => sum + Number(t.amount), 0);
+        saveBudgetSettings({ monthly_income: remainingMonthIncome });
+      }
+
       return { error: null };
     } catch (err: any) {
       return { error: err };
@@ -550,13 +564,14 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
   // KALKULASI RINGKASAN METRIK BULANAN (MONTH SUMMARY)
   // =========================================================================
   const summary: MonthSummary = useMemo(() => {
-    // Total income: jika user menginput pendapatan di settings, gunakan itu, ditambah jika ada transaksi income (transfer dikecualikan)
+    // Total income: akumulasi seluruh transaksi pemasukan bulan ini (transfer dikecualikan)
     const incomeFromTransactions = transactions
       .filter((t) => t.type === 'income' && !t.is_transfer)
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const baseIncome = Number(budgetSettings.monthly_income || 0);
-    const totalIncome = Math.max(baseIncome, incomeFromTransactions);
+    // Jika ada transaksi pemasukan bulan ini, prioritaskan total transaksi riil; jika belum ada gunakan target baseIncome
+    const totalIncome = incomeFromTransactions > 0 ? incomeFromTransactions : baseIncome;
 
     // Pengeluaran per kategori alokasi (transfer / mutasi antar dompet dikecualikan)
     const expenseTx = transactions.filter((t) => t.type === 'expense' && !t.is_transfer);

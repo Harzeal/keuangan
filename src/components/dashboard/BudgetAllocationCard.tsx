@@ -44,27 +44,27 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
 
   const currentIncomeNumber = parseRupiahInput(incomeInput);
 
-  // Sinkronkan state lokal saat prop budgetSettings berubah
+  // Sinkronkan state saat prop budgetSettings atau summary.income berubah
   useEffect(() => {
-    if (budgetSettings) {
-      const inc = budgetSettings.monthly_income || 0;
-      setIncomeInput(inc > 0 ? inc.toLocaleString('id-ID') : '');
-      const np = budgetSettings.needs_percentage || 50;
-      const wp = budgetSettings.wants_percentage || 20;
-      const sp = budgetSettings.savings_percentage || 30;
-      setNeedsPercent(np);
-      setWantsPercent(wp);
-      setSavingsPercent(sp);
+    // Prioritaskan total pemasukan riil dari transaksi jika ada, atau dari budgetSettings
+    const effectiveIncome = summary.income > 0 ? summary.income : Number(budgetSettings?.monthly_income || 0);
+    setIncomeInput(effectiveIncome > 0 ? effectiveIncome.toLocaleString('id-ID') : '');
 
-      if (inc > 0) {
-        setNeedsNominalStr(formatRupiah(Math.round((inc * np) / 100)));
-        setWantsNominalStr(formatRupiah(Math.round((inc * wp) / 100)));
-        setSavingsNominalStr(formatRupiah(Math.round((inc * sp) / 100)));
-      }
+    const np = budgetSettings?.needs_percentage ?? 50;
+    const wp = budgetSettings?.wants_percentage ?? 20;
+    const sp = budgetSettings?.savings_percentage ?? 30;
+    setNeedsPercent(np);
+    setWantsPercent(wp);
+    setSavingsPercent(sp);
+
+    if (effectiveIncome > 0) {
+      setNeedsNominalStr(formatRupiah(Math.round((effectiveIncome * np) / 100)));
+      setWantsNominalStr(formatRupiah(Math.round((effectiveIncome * wp) / 100)));
+      setSavingsNominalStr(formatRupiah(Math.round((effectiveIncome * sp) / 100)));
     }
-  }, [budgetSettings]);
+  }, [budgetSettings, summary.income]);
 
-  // Handler saat income bulanan diedit
+  // Handler saat income bulanan diedit manual
   const handleIncomeChange = (valStr: string) => {
     const raw = valStr.replace(/[^0-9]/g, '');
     const num = raw ? parseInt(raw, 10) : 0;
@@ -77,52 +77,70 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
     }
   };
 
-  // Handler saat slider persentase digeser
-  const handleNeedsPercentChange = (p: number) => {
-    setNeedsPercent(p);
+  // Batas Maksimal Masing-masing Pos Agar Total TIDAK PERNAH Melebihi 100%
+  // Jika Keinginan 20% dan Tabungan 30%, Kebutuhan mentok di 50%
+  const maxNeeds = Math.max(0, 100 - wantsPercent - savingsPercent);
+  const maxWants = Math.max(0, 100 - needsPercent - savingsPercent);
+  const maxSavings = Math.max(0, 100 - needsPercent - wantsPercent);
+
+  // Handler saat slider persentase digeser (Mentok otomatis di sisa 100%)
+  const handleNeedsPercentChange = (val: number) => {
+    const capped = Math.min(val, maxNeeds);
+    setNeedsPercent(capped);
     if (currentIncomeNumber > 0) {
-      setNeedsNominalStr(formatRupiah(Math.round((currentIncomeNumber * p) / 100)));
+      setNeedsNominalStr(formatRupiah(Math.round((currentIncomeNumber * capped) / 100)));
     }
   };
 
-  const handleWantsPercentChange = (p: number) => {
-    setWantsPercent(p);
+  const handleWantsPercentChange = (val: number) => {
+    const capped = Math.min(val, maxWants);
+    setWantsPercent(capped);
     if (currentIncomeNumber > 0) {
-      setWantsNominalStr(formatRupiah(Math.round((currentIncomeNumber * p) / 100)));
+      setWantsNominalStr(formatRupiah(Math.round((currentIncomeNumber * capped) / 100)));
     }
   };
 
-  const handleSavingsPercentChange = (p: number) => {
-    setSavingsPercent(p);
+  const handleSavingsPercentChange = (val: number) => {
+    const capped = Math.min(val, maxSavings);
+    setSavingsPercent(capped);
     if (currentIncomeNumber > 0) {
-      setSavingsNominalStr(formatRupiah(Math.round((currentIncomeNumber * p) / 100)));
+      setSavingsNominalStr(formatRupiah(Math.round((currentIncomeNumber * capped) / 100)));
     }
   };
 
-  // Handler saat nominal diketik langsung (Dua Arah: Persen Otomatis Menyesuaikan)
+  // Handler saat nominal diketik langsung (Dua Arah: Persen Menyesuaikan dan Mentok di Max)
   const handleNeedsNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = parseRupiahInput(e.target.value);
-    setNeedsNominalStr(raw > 0 ? formatRupiah(raw) : '');
+    const maxNominal = currentIncomeNumber > 0 ? Math.round((currentIncomeNumber * maxNeeds) / 100) : raw;
+    const cappedNominal = Math.min(raw, maxNominal);
+    setNeedsNominalStr(cappedNominal > 0 ? formatRupiah(cappedNominal) : '');
+
     if (currentIncomeNumber > 0) {
-      const calcPct = Math.min(100, Math.max(0, Math.round((raw / currentIncomeNumber) * 100)));
+      const calcPct = Math.min(maxNeeds, Math.max(0, Math.round((cappedNominal / currentIncomeNumber) * 100)));
       setNeedsPercent(calcPct);
     }
   };
 
   const handleWantsNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = parseRupiahInput(e.target.value);
-    setWantsNominalStr(raw > 0 ? formatRupiah(raw) : '');
+    const maxNominal = currentIncomeNumber > 0 ? Math.round((currentIncomeNumber * maxWants) / 100) : raw;
+    const cappedNominal = Math.min(raw, maxNominal);
+    setWantsNominalStr(cappedNominal > 0 ? formatRupiah(cappedNominal) : '');
+
     if (currentIncomeNumber > 0) {
-      const calcPct = Math.min(100, Math.max(0, Math.round((raw / currentIncomeNumber) * 100)));
+      const calcPct = Math.min(maxWants, Math.max(0, Math.round((cappedNominal / currentIncomeNumber) * 100)));
       setWantsPercent(calcPct);
     }
   };
 
   const handleSavingsNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = parseRupiahInput(e.target.value);
-    setSavingsNominalStr(raw > 0 ? formatRupiah(raw) : '');
+    const maxNominal = currentIncomeNumber > 0 ? Math.round((currentIncomeNumber * maxSavings) / 100) : raw;
+    const cappedNominal = Math.min(raw, maxNominal);
+    setSavingsNominalStr(cappedNominal > 0 ? formatRupiah(cappedNominal) : '');
+
     if (currentIncomeNumber > 0) {
-      const calcPct = Math.min(100, Math.max(0, Math.round((raw / currentIncomeNumber) * 100)));
+      const calcPct = Math.min(maxSavings, Math.max(0, Math.round((cappedNominal / currentIncomeNumber) * 100)));
       setSavingsPercent(calcPct);
     }
   };
@@ -150,7 +168,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
     }
   };
 
-  // Preset Template
+  // Preset Template (Pasti Pas 100%)
   const applyPreset = (needs: number, wants: number, savings: number) => {
     setNeedsPercent(needs);
     setWantsPercent(wants);
@@ -162,7 +180,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
     }
   };
 
-  // Seimbangkan ke 100% secara otomatis
+  // Seimbangkan ke 100% secara otomatis (Masukkan sisa ke tabungan)
   const autoBalanceTo100 = () => {
     const remaining = 100 - needsPercent - wantsPercent;
     if (remaining >= 0) {
@@ -176,7 +194,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-7 border border-slate-200/80 dark:border-slate-800 shadow-sm transition-colors">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-7 border border-slate-200/80 dark:border-slate-800 shadow-sm transition-colors">
       
       {/* Header Alokasi */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -195,7 +213,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
         </div>
 
         {/* Preset Buttons */}
-        <div className="flex items-center gap-1.5 self-start sm:self-auto bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl text-xs font-semibold">
+        <div className="flex items-center gap-1.5 self-start sm:self-auto bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl text-xs font-semibold flex-wrap">
           <button
             type="button"
             onClick={() => applyPreset(50, 20, 30)}
@@ -229,6 +247,17 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
           >
             40/20/40 Invest
           </button>
+          <button
+            type="button"
+            onClick={() => applyPreset(70, 20, 10)}
+            className={`px-2.5 py-1 rounded-lg transition ${
+              needsPercent === 70 && wantsPercent === 20 && savingsPercent === 10
+                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            70/20/10 Bertahan
+          </button>
         </div>
       </div>
 
@@ -236,11 +265,20 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
       <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-brand-50/60 via-indigo-50/40 to-purple-50/60 dark:from-slate-800/60 dark:via-indigo-950/20 dark:to-slate-800/60 border border-brand-100 dark:border-slate-800">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-              Total Pemasukan / Gaji Bulanan
-            </label>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+                Total Pemasukan Bulan Ini
+              </label>
+              {summary.income > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                  Otomatis Akumulasi
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Target uang masuk bulan ini. Anda bisa mengubah persentase atau mengetik langsung nominal pos di bawah
+              {summary.income > 0
+                ? 'Total bertambah otomatis setiap Anda mencatat transaksi pemasukan baru'
+                : 'Target estimasi uang masuk. Nominal pos di bawah otomatis menyesuaikan'}
             </p>
           </div>
 
@@ -287,7 +325,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
       </div>
 
       {/* 3 Interactive Pocket Cards (Kebutuhan, Keinginan, Tabungan) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
         
         {/* Pos 1: Kebutuhan (Needs) */}
         <div className="p-4 sm:p-5 rounded-2xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 relative">
@@ -305,16 +343,21 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
                 </span>
               </div>
             </div>
-            <span className="text-sm font-extrabold text-sky-600 dark:text-sky-400 bg-sky-100 dark:bg-sky-900/50 px-2 py-0.5 rounded-lg">
-              {needsPercent}%
-            </span>
+            <div className="text-right">
+              <span className="text-sm font-extrabold text-sky-600 dark:text-sky-400 bg-sky-100 dark:bg-sky-900/50 px-2 py-0.5 rounded-lg inline-block">
+                {needsPercent}%
+              </span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Maks: {maxNeeds}%
+              </span>
+            </div>
           </div>
 
-          {/* Slider Persen */}
+          {/* Slider Persen (Mentok di maxNeeds) */}
           <input
             type="range"
             min="0"
-            max="100"
+            max={maxNeeds}
             step="1"
             value={needsPercent}
             onChange={(e) => handleNeedsPercentChange(Number(e.target.value))}
@@ -366,16 +409,21 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
                 </span>
               </div>
             </div>
-            <span className="text-sm font-extrabold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded-lg">
-              {wantsPercent}%
-            </span>
+            <div className="text-right">
+              <span className="text-sm font-extrabold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded-lg inline-block">
+                {wantsPercent}%
+              </span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Maks: {maxWants}%
+              </span>
+            </div>
           </div>
 
-          {/* Slider Persen */}
+          {/* Slider Persen (Mentok di maxWants) */}
           <input
             type="range"
             min="0"
-            max="100"
+            max={maxWants}
             step="1"
             value={wantsPercent}
             onChange={(e) => handleWantsPercentChange(Number(e.target.value))}
@@ -427,16 +475,21 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
                 </span>
               </div>
             </div>
-            <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-lg">
-              {savingsPercent}%
-            </span>
+            <div className="text-right">
+              <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-lg inline-block">
+                {savingsPercent}%
+              </span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Maks: {maxSavings}%
+              </span>
+            </div>
           </div>
 
-          {/* Slider Persen */}
+          {/* Slider Persen (Mentok di maxSavings) */}
           <input
             type="range"
             min="0"
-            max="100"
+            max={maxSavings}
             step="1"
             value={savingsPercent}
             onChange={(e) => handleSavingsPercentChange(Number(e.target.value))}
@@ -474,6 +527,47 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
 
       </div>
 
+      {/* Visual Allocation Composition Bar */}
+      <div className="mt-5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-2">
+        <div className="flex items-center justify-between text-xs font-bold">
+          <span className="text-slate-700 dark:text-slate-300">Komposisi Anggaran Total</span>
+          <span className={is100Percent ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
+            {totalPercentage}% dari 100% {is100Percent && '✓ Sempurna'}
+          </span>
+        </div>
+        
+        <div className="h-3 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex">
+          {needsPercent > 0 && (
+            <div style={{ width: `${needsPercent}%` }} className="bg-sky-500 transition-all duration-200" title={`Kebutuhan: ${needsPercent}%`} />
+          )}
+          {wantsPercent > 0 && (
+            <div style={{ width: `${wantsPercent}%` }} className="bg-amber-500 transition-all duration-200" title={`Keinginan: ${wantsPercent}%`} />
+          )}
+          {savingsPercent > 0 && (
+            <div style={{ width: `${savingsPercent}%` }} className="bg-emerald-500 transition-all duration-200" title={`Tabungan: ${savingsPercent}%`} />
+          )}
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 flex-wrap gap-2 pt-1">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span> Kebutuhan ({needsPercent}%)</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Keinginan ({wantsPercent}%)</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Tabungan ({savingsPercent}%)</span>
+          </div>
+
+          {!is100Percent && (
+            <button
+              type="button"
+              onClick={autoBalanceTo100}
+              className="text-brand-600 dark:text-brand-400 font-bold hover:underline flex items-center gap-1 ml-auto"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Isi Sisa {100 - totalPercentage}% ke Tabungan</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Validation Warning if Total !== 100% */}
       {!is100Percent && (
         <motion.div
@@ -484,7 +578,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>
-              Total persentase saat ini <b>{totalPercentage}%</b> (selisih {Math.abs(100 - totalPercentage)}%). Harap sesuaikan agar pas <b>100%</b>.
+              Total alokasi saat ini <b>{totalPercentage}%</b>. Masih ada <b>{100 - totalPercentage}%</b> yang belum teralokasi.
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -492,7 +586,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
               onClick={autoBalanceTo100}
               className="px-2.5 py-1 rounded-lg bg-amber-200/60 dark:bg-amber-900/60 hover:bg-amber-300/60 text-amber-900 dark:text-amber-200 font-bold text-[11px] transition"
             >
-              Seimbangkan ke 100%
+              Genapkan ke 100%
             </button>
             <button
               onClick={() => applyPreset(50, 20, 30)}
