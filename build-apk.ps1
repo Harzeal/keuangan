@@ -1,4 +1,7 @@
 # Script Otomatis Build APK WebView untuk Finance
+if (-not $env:JAVA_HOME -and (Test-Path "C:\Program Files\Android\Android Studio\jbr")) {
+    $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+}
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "         Finance - APK Builder            " -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan

@@ -6,50 +6,96 @@ import {
   Trash2,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowLeftRight,
   Inbox,
   Calendar,
   Tag,
   Plus
 } from 'lucide-react';
-import { Transaction, MainCategory } from '../../types/database';
+import { Transaction, MainCategory, Wallet } from '../../types/database';
 import { formatRupiah, formatIndoDate } from '../../lib/utils';
 
 interface TransactionListProps {
   transactions: Transaction[];
+  wallets?: Wallet[];
   privacyMode: boolean;
   onDeleteTransaction: (id: string) => Promise<{ error: any }>;
   onOpenAddModal: () => void;
+  selectedWalletFilter?: string | null;
+  onSelectWalletFilter?: (walletName: string | null) => void;
 }
 
 export const TransactionList: React.FC<TransactionListProps> = ({
   transactions,
+  wallets,
   privacyMode,
   onDeleteTransaction,
-  onOpenAddModal
+  onOpenAddModal,
+  selectedWalletFilter,
+  onSelectWalletFilter
 }) => {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
+  const [walletFilter, setWalletFilter] = useState<string>(selectedWalletFilter || 'all');
+  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'>('date_desc');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState<number>(20);
 
-  // Filter logika
-  const filtered = transactions.filter((t) => {
-    // 1. Search Query
-    const query = search.toLowerCase();
-    const matchSearch =
-      t.title.toLowerCase().includes(query) ||
-      t.category_name.toLowerCase().includes(query) ||
-      (t.notes && t.notes.toLowerCase().includes(query));
+  React.useEffect(() => {
+    setVisibleCount(20);
+  }, [search, filterType, walletFilter, sortBy]);
 
-    // 2. Filter Tab
-    let matchTab = true;
-    if (filterType === 'income') matchTab = t.type === 'income';
-    else if (filterType === 'expense') matchTab = t.type === 'expense';
-    else if (filterType === 'needs') matchTab = t.main_category === 'needs';
-    else if (filterType === 'wants') matchTab = t.main_category === 'wants';
-    else if (filterType === 'savings') matchTab = t.main_category === 'savings';
+  React.useEffect(() => {
+    if (selectedWalletFilter !== undefined) {
+      setWalletFilter(selectedWalletFilter || 'all');
+    }
+  }, [selectedWalletFilter]);
 
-    return matchSearch && matchTab;
-  });
+  // Filter & Sort logika
+  const filtered = transactions
+    .filter((t) => {
+      // 1. Search Query
+      const query = search.toLowerCase();
+      const matchSearch =
+        t.title.toLowerCase().includes(query) ||
+        t.category_name.toLowerCase().includes(query) ||
+        (t.wallet_name && t.wallet_name.toLowerCase().includes(query)) ||
+        (t.transfer_from && t.transfer_from.toLowerCase().includes(query)) ||
+        (t.transfer_to && t.transfer_to.toLowerCase().includes(query)) ||
+        (t.notes && t.notes.toLowerCase().includes(query));
+
+      // 2. Filter Tab
+      let matchTab = true;
+      if (filterType === 'transfer') matchTab = Boolean(t.is_transfer);
+      else if (filterType === 'income') matchTab = t.type === 'income' && !t.is_transfer;
+      else if (filterType === 'expense') matchTab = t.type === 'expense' && !t.is_transfer;
+      else if (filterType === 'needs') matchTab = t.main_category === 'needs' && !t.is_transfer;
+      else if (filterType === 'wants') matchTab = t.main_category === 'wants' && !t.is_transfer;
+      else if (filterType === 'savings') matchTab = t.main_category === 'savings' && !t.is_transfer;
+
+      // 3. Wallet Filter
+      let matchWallet = true;
+      if (walletFilter !== 'all') {
+        const wf = walletFilter.toLowerCase();
+        if (t.is_transfer) {
+          matchWallet =
+            (t.transfer_from || '').toLowerCase() === wf ||
+            (t.transfer_to || '').toLowerCase() === wf ||
+            (t.wallet_name || '').toLowerCase() === wf;
+        } else {
+          matchWallet = (t.wallet_name || 'Kas / Tunai').toLowerCase() === wf;
+        }
+      }
+
+      return matchSearch && matchTab && matchWallet;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'date_desc') return b.date.localeCompare(a.date);
+      if (sortBy === 'date_asc') return a.date.localeCompare(b.date);
+      if (sortBy === 'amount_desc') return Number(b.amount) - Number(a.amount);
+      if (sortBy === 'amount_asc') return Number(a.amount) - Number(b.amount);
+      return 0;
+    });
 
   const handleDelete = async (id: string) => {
     if (confirm('Apakah Anda yakin ingin menghapus catatan transaksi ini?')) {
@@ -60,7 +106,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-7 border border-slate-200/80 dark:border-slate-800 shadow-sm transition-colors">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-7 border border-slate-200/80 dark:border-slate-800 shadow-sm transition-colors">
       
       {/* Header & Controls */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
@@ -108,6 +154,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           { id: 'needs', label: '🔵 Kebutuhan' },
           { id: 'wants', label: '🟠 Keinginan' },
           { id: 'savings', label: '🟣 Tabungan' },
+          { id: 'transfer', label: '🔄 Pindah Saldo' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -121,6 +168,43 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             {tab.label}
           </button>
         ))}
+      </div>
+
+      {/* Secondary Controls: Filter Dompet & Urutan */}
+      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 font-medium">Sumber Dompet:</span>
+          <select
+            value={walletFilter}
+            onChange={(e) => {
+              setWalletFilter(e.target.value);
+              if (onSelectWalletFilter) onSelectWalletFilter(e.target.value === 'all' ? null : e.target.value);
+            }}
+            className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
+          >
+            <option value="all">Semua Dompet ({transactions.length})</option>
+            {wallets?.map((w) => (
+              <option key={w.id} value={w.name}>
+                {w.type === 'bank' ? '🏦 ' : w.type === 'ewallet' ? '📱 ' : '💵 '}
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 font-medium">Urutan:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
+          >
+            <option value="date_desc">Tanggal Terbaru</option>
+            <option value="date_asc">Tanggal Terlama</option>
+            <option value="amount_desc">Nominal Terbesar</option>
+            <option value="amount_asc">Nominal Terkecil</option>
+          </select>
+        </div>
       </div>
 
       {/* List Items */}
@@ -147,9 +231,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           )}
         </div>
       ) : (
-        <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+        <>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
           <AnimatePresence initial={false}>
-            {filtered.map((tx) => {
+            {filtered.slice(0, visibleCount).map((tx) => {
               const isIncome = tx.type === 'income';
               const allocationColor =
                 tx.main_category === 'needs'
@@ -183,12 +268,16 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   <div className="flex items-center gap-3 min-w-0">
                     <div
                       className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 font-bold ${
-                        isIncome
+                        tx.is_transfer
+                          ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400'
+                          : isIncome
                           ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
                           : 'bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
                       }`}
                     >
-                      {isIncome ? (
+                      {tx.is_transfer ? (
+                        <ArrowLeftRight className="w-5 h-5" />
+                      ) : isIncome ? (
                         <ArrowUpRight className="w-5 h-5" />
                       ) : (
                         <ArrowDownRight className="w-5 h-5" />
@@ -200,19 +289,52 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
                           {tx.title}
                         </p>
-                        <span
-                          className={`hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-md border ${allocationColor}`}
-                        >
-                          {allocationLabel}
-                        </span>
+                        {tx.is_transfer ? (
+                          <span className="hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-md border bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800">
+                            Pindah Saldo
+                          </span>
+                        ) : (
+                          <span
+                            className={`hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-md border ${allocationColor}`}
+                          >
+                            {allocationLabel}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">
-                          {tx.category_name}
-                        </span>
-                        <span>•</span>
-                        <span>{formatIndoDate(tx.date)}</span>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex-wrap">
+                        {tx.is_transfer ? (
+                          <>
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/80 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 flex items-center gap-1">
+                              <span>{tx.transfer_from || tx.wallet_name}</span>
+                              <span>➔</span>
+                              <span>{tx.transfer_to || 'Tujuan'}</span>
+                            </span>
+                            <span>•</span>
+                            <span>{formatIndoDate(tx.date)}</span>
+                          </>
+                        ) : (
+                          <>
+                            {tx.is_from_savings && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                🛡️ Dari Tabungan
+                              </span>
+                            )}
+                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                              {tx.category_name}
+                            </span>
+                            <span>•</span>
+                            <span>{formatIndoDate(tx.date)}</span>
+                            {tx.wallet_name && (
+                              <>
+                                <span>•</span>
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                                  {tx.wallet_name}
+                                </span>
+                              </>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -222,13 +344,17 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     <div className="text-right">
                       <p
                         className={`text-xs sm:text-sm font-black tracking-tight ${
-                          isIncome
+                          tx.is_transfer
+                            ? 'text-indigo-600 dark:text-indigo-400'
+                            : isIncome
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : 'text-rose-600 dark:text-rose-400'
                         }`}
                       >
                         {privacyMode ? (
                           '••••••'
+                        ) : tx.is_transfer ? (
+                          `⇄ ${formatRupiah(tx.amount)}`
                         ) : (
                           `${isIncome ? '+' : '-'} ${formatRupiah(tx.amount)}`
                         )}
@@ -249,7 +375,20 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             })}
           </AnimatePresence>
         </div>
-      )}
+
+        {/* Tombol Muat Lebih Banyak jika data banyak */}
+        {filtered.length > visibleCount && (
+          <div className="pt-4 text-center border-t border-slate-100 dark:border-slate-800">
+            <button
+              onClick={() => setVisibleCount((prev) => prev + 20)}
+              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition shadow-xs"
+            >
+              Tampilkan Lebih Banyak ({filtered.length - visibleCount} catatan lagi)
+            </button>
+          </div>
+        )}
+      </>
+    )}
 
     </div>
   );

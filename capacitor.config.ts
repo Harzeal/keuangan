@@ -5,6 +5,8 @@ const config: CapacitorConfig = {
   appName: 'Finance',
   webDir: 'dist',
   server: {
+    url: 'https://financebudgatily.vercel.app',
+    cleartext: false,
     androidScheme: 'https'
   }
 };

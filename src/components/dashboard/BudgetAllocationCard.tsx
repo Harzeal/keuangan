@@ -33,32 +33,102 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
   const [needsPercent, setNeedsPercent] = useState<number>(50);
   const [wantsPercent, setWantsPercent] = useState<number>(20);
   const [savingsPercent, setSavingsPercent] = useState<number>(30);
+
+  // State nominal string yang dapat diedit langsung
+  const [needsNominalStr, setNeedsNominalStr] = useState<string>('');
+  const [wantsNominalStr, setWantsNominalStr] = useState<string>('');
+  const [savingsNominalStr, setSavingsNominalStr] = useState<string>('');
+
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
-  // Sinkronkan state lokal saat prop berubah
+  const currentIncomeNumber = parseRupiahInput(incomeInput);
+
+  // Sinkronkan state lokal saat prop budgetSettings berubah
   useEffect(() => {
     if (budgetSettings) {
-      setIncomeInput(
-        budgetSettings.monthly_income > 0
-          ? budgetSettings.monthly_income.toLocaleString('id-ID')
-          : ''
-      );
-      setNeedsPercent(budgetSettings.needs_percentage || 50);
-      setWantsPercent(budgetSettings.wants_percentage || 20);
-      setSavingsPercent(budgetSettings.savings_percentage || 30);
+      const inc = budgetSettings.monthly_income || 0;
+      setIncomeInput(inc > 0 ? inc.toLocaleString('id-ID') : '');
+      const np = budgetSettings.needs_percentage || 50;
+      const wp = budgetSettings.wants_percentage || 20;
+      const sp = budgetSettings.savings_percentage || 30;
+      setNeedsPercent(np);
+      setWantsPercent(wp);
+      setSavingsPercent(sp);
+
+      if (inc > 0) {
+        setNeedsNominalStr(formatRupiah(Math.round((inc * np) / 100)));
+        setWantsNominalStr(formatRupiah(Math.round((inc * wp) / 100)));
+        setSavingsNominalStr(formatRupiah(Math.round((inc * sp) / 100)));
+      }
     }
   }, [budgetSettings]);
 
+  // Handler saat income bulanan diedit
+  const handleIncomeChange = (valStr: string) => {
+    const raw = valStr.replace(/[^0-9]/g, '');
+    const num = raw ? parseInt(raw, 10) : 0;
+    setIncomeInput(num > 0 ? num.toLocaleString('id-ID') : '');
+
+    if (num > 0) {
+      setNeedsNominalStr(formatRupiah(Math.round((num * needsPercent) / 100)));
+      setWantsNominalStr(formatRupiah(Math.round((num * wantsPercent) / 100)));
+      setSavingsNominalStr(formatRupiah(Math.round((num * savingsPercent) / 100)));
+    }
+  };
+
+  // Handler saat slider persentase digeser
+  const handleNeedsPercentChange = (p: number) => {
+    setNeedsPercent(p);
+    if (currentIncomeNumber > 0) {
+      setNeedsNominalStr(formatRupiah(Math.round((currentIncomeNumber * p) / 100)));
+    }
+  };
+
+  const handleWantsPercentChange = (p: number) => {
+    setWantsPercent(p);
+    if (currentIncomeNumber > 0) {
+      setWantsNominalStr(formatRupiah(Math.round((currentIncomeNumber * p) / 100)));
+    }
+  };
+
+  const handleSavingsPercentChange = (p: number) => {
+    setSavingsPercent(p);
+    if (currentIncomeNumber > 0) {
+      setSavingsNominalStr(formatRupiah(Math.round((currentIncomeNumber * p) / 100)));
+    }
+  };
+
+  // Handler saat nominal diketik langsung (Dua Arah: Persen Otomatis Menyesuaikan)
+  const handleNeedsNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = parseRupiahInput(e.target.value);
+    setNeedsNominalStr(raw > 0 ? formatRupiah(raw) : '');
+    if (currentIncomeNumber > 0) {
+      const calcPct = Math.min(100, Math.max(0, Math.round((raw / currentIncomeNumber) * 100)));
+      setNeedsPercent(calcPct);
+    }
+  };
+
+  const handleWantsNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = parseRupiahInput(e.target.value);
+    setWantsNominalStr(raw > 0 ? formatRupiah(raw) : '');
+    if (currentIncomeNumber > 0) {
+      const calcPct = Math.min(100, Math.max(0, Math.round((raw / currentIncomeNumber) * 100)));
+      setWantsPercent(calcPct);
+    }
+  };
+
+  const handleSavingsNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = parseRupiahInput(e.target.value);
+    setSavingsNominalStr(raw > 0 ? formatRupiah(raw) : '');
+    if (currentIncomeNumber > 0) {
+      const calcPct = Math.min(100, Math.max(0, Math.round((raw / currentIncomeNumber) * 100)));
+      setSavingsPercent(calcPct);
+    }
+  };
+
   const totalPercentage = needsPercent + wantsPercent + savingsPercent;
   const is100Percent = totalPercentage === 100;
-
-  const currentIncomeNumber = parseRupiahInput(incomeInput);
-
-  // Kalkulasi nominal rupiah real-time sesuai slider
-  const calcNeedsNominal = Math.round((currentIncomeNumber * needsPercent) / 100);
-  const calcWantsNominal = Math.round((currentIncomeNumber * wantsPercent) / 100);
-  const calcSavingsNominal = Math.round((currentIncomeNumber * savingsPercent) / 100);
 
   // Handler Simpan
   const handleSave = async () => {
@@ -85,6 +155,24 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
     setNeedsPercent(needs);
     setWantsPercent(wants);
     setSavingsPercent(savings);
+    if (currentIncomeNumber > 0) {
+      setNeedsNominalStr(formatRupiah(Math.round((currentIncomeNumber * needs) / 100)));
+      setWantsNominalStr(formatRupiah(Math.round((currentIncomeNumber * wants) / 100)));
+      setSavingsNominalStr(formatRupiah(Math.round((currentIncomeNumber * savings) / 100)));
+    }
+  };
+
+  // Seimbangkan ke 100% secara otomatis
+  const autoBalanceTo100 = () => {
+    const remaining = 100 - needsPercent - wantsPercent;
+    if (remaining >= 0) {
+      setSavingsPercent(remaining);
+      if (currentIncomeNumber > 0) {
+        setSavingsNominalStr(formatRupiah(Math.round((currentIncomeNumber * remaining) / 100)));
+      }
+    } else {
+      applyPreset(50, 20, 30);
+    }
   };
 
   return (
@@ -152,7 +240,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
               Total Pemasukan / Gaji Bulanan
             </label>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Masukkan target uang masuk bulan ini sebagai acuan pembagian nominal pos anggaran
+              Target uang masuk bulan ini. Anda bisa mengubah persentase atau mengetik langsung nominal pos di bawah
             </p>
           </div>
 
@@ -165,14 +253,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
                 type="text"
                 placeholder="0"
                 value={incomeInput}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/[^0-9]/g, '');
-                  if (!raw) {
-                    setIncomeInput('');
-                  } else {
-                    setIncomeInput(parseInt(raw, 10).toLocaleString('id-ID'));
-                  }
-                }}
+                onChange={(e) => handleIncomeChange(e.target.value)}
                 className="w-48 sm:w-56 pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-base font-extrabold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               />
             </div>
@@ -229,29 +310,39 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
             </span>
           </div>
 
-          {/* Slider */}
+          {/* Slider Persen */}
           <input
             type="range"
             min="0"
             max="100"
-            step="5"
+            step="1"
             value={needsPercent}
-            onChange={(e) => setNeedsPercent(Number(e.target.value))}
+            onChange={(e) => handleNeedsPercentChange(Number(e.target.value))}
             className="w-full accent-sky-600 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg cursor-pointer mb-3"
           />
 
-          {/* Real-time Nominal Calculation with AnimatedCounter */}
-          <div className="pt-2 border-t border-sky-100 dark:border-sky-900/30 flex items-baseline justify-between">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Nominal Pagu:</span>
-            <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-              {privacyMode ? (
-                'Rp ••••••••'
-              ) : (
-                <AnimatedCounter value={calcNeedsNominal} />
-              )}
+          {/* Input Nominal Langsung (Dua Arah) */}
+          <div className="pt-2.5 border-t border-sky-100 dark:border-sky-900/30">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Nominal Pagu:</span>
+              <span className="text-[10px] text-sky-600 dark:text-sky-400 font-bold">Ketik langsung</span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-400">
+                Rp
+              </span>
+              <input
+                type="text"
+                value={privacyMode ? '••••••••' : needsNominalStr}
+                disabled={privacyMode}
+                onChange={handleNeedsNominalChange}
+                placeholder="0"
+                className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-800/80 rounded-xl text-sm sm:text-base font-extrabold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-2xs"
+              />
             </div>
           </div>
-          <div className="mt-1 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+
+          <div className="mt-2.5 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
             <span>Terpakai:</span>
             <span className="font-semibold text-sky-700 dark:text-sky-300">
               {privacyMode ? '•••' : formatRupiah(summary.needs_expense)}
@@ -280,29 +371,39 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
             </span>
           </div>
 
-          {/* Slider */}
+          {/* Slider Persen */}
           <input
             type="range"
             min="0"
             max="100"
-            step="5"
+            step="1"
             value={wantsPercent}
-            onChange={(e) => setWantsPercent(Number(e.target.value))}
+            onChange={(e) => handleWantsPercentChange(Number(e.target.value))}
             className="w-full accent-amber-600 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg cursor-pointer mb-3"
           />
 
-          {/* Real-time Nominal Calculation with AnimatedCounter */}
-          <div className="pt-2 border-t border-amber-100 dark:border-amber-900/30 flex items-baseline justify-between">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Nominal Pagu:</span>
-            <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-              {privacyMode ? (
-                'Rp ••••••••'
-              ) : (
-                <AnimatedCounter value={calcWantsNominal} />
-              )}
+          {/* Input Nominal Langsung (Dua Arah) */}
+          <div className="pt-2.5 border-t border-amber-100 dark:border-amber-900/30">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Nominal Pagu:</span>
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">Ketik langsung</span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-400">
+                Rp
+              </span>
+              <input
+                type="text"
+                value={privacyMode ? '••••••••' : wantsNominalStr}
+                disabled={privacyMode}
+                onChange={handleWantsNominalChange}
+                placeholder="0"
+                className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800/80 rounded-xl text-sm sm:text-base font-extrabold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+              />
             </div>
           </div>
-          <div className="mt-1 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+
+          <div className="mt-2.5 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
             <span>Terpakai:</span>
             <span className="font-semibold text-amber-700 dark:text-amber-300">
               {privacyMode ? '•••' : formatRupiah(summary.wants_expense)}
@@ -331,30 +432,40 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
             </span>
           </div>
 
-          {/* Slider */}
+          {/* Slider Persen */}
           <input
             type="range"
             min="0"
             max="100"
-            step="5"
+            step="1"
             value={savingsPercent}
-            onChange={(e) => setSavingsPercent(Number(e.target.value))}
+            onChange={(e) => handleSavingsPercentChange(Number(e.target.value))}
             className="w-full accent-emerald-600 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg cursor-pointer mb-3"
           />
 
-          {/* Real-time Nominal Calculation with AnimatedCounter */}
-          <div className="pt-2 border-t border-emerald-100 dark:border-emerald-900/30 flex items-baseline justify-between">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Target Disisihkan:</span>
-            <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-              {privacyMode ? (
-                'Rp ••••••••'
-              ) : (
-                <AnimatedCounter value={calcSavingsNominal} />
-              )}
+          {/* Input Nominal Langsung (Dua Arah) */}
+          <div className="pt-2.5 border-t border-emerald-100 dark:border-emerald-900/30">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Target Disisihkan:</span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Ketik langsung</span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-400">
+                Rp
+              </span>
+              <input
+                type="text"
+                value={privacyMode ? '••••••••' : savingsNominalStr}
+                disabled={privacyMode}
+                onChange={handleSavingsNominalChange}
+                placeholder="0"
+                className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-sm sm:text-base font-extrabold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+              />
             </div>
           </div>
-          <div className="mt-1 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
-            <span>Tersimpan:</span>
+
+          <div className="mt-2.5 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+            <span>Tersimpan Bulan Ini:</span>
             <span className="font-semibold text-emerald-700 dark:text-emerald-300">
               {privacyMode ? '•••' : formatRupiah(summary.savings_allocated)}
             </span>
@@ -368,20 +479,28 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-center justify-between"
+          className="mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
         >
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>
-              Total persentase alokasi saat ini adalah <b>{totalPercentage}%</b>. Harap sesuaikan slider agar pas berjumlah <b>100%</b>.
+              Total persentase saat ini <b>{totalPercentage}%</b> (selisih {Math.abs(100 - totalPercentage)}%). Harap sesuaikan agar pas <b>100%</b>.
             </span>
           </div>
-          <button
-            onClick={() => applyPreset(50, 20, 30)}
-            className="underline font-bold text-xs shrink-0 ml-2"
-          >
-            Reset ke 100%
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={autoBalanceTo100}
+              className="px-2.5 py-1 rounded-lg bg-amber-200/60 dark:bg-amber-900/60 hover:bg-amber-300/60 text-amber-900 dark:text-amber-200 font-bold text-[11px] transition"
+            >
+              Seimbangkan ke 100%
+            </button>
+            <button
+              onClick={() => applyPreset(50, 20, 30)}
+              className="underline font-bold text-[11px]"
+            >
+              Reset 50/20/30
+            </button>
+          </div>
         </motion.div>
       )}
 

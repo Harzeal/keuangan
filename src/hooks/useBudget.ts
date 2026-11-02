@@ -7,7 +7,9 @@ import {
   Category,
   MonthSummary,
   SmartRecommendation,
-  MainCategory
+  MainCategory,
+  Wallet,
+  RecurringTransaction
 } from '../types/database';
 import { getCurrentMonthYear, getMonthDaysInfo, getAlertStatus } from '../lib/utils';
 
@@ -27,6 +29,77 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
+
+  // State Multi-Dompet (Wallets)
+  const [wallets, setWallets] = useState<Wallet[]>(() => {
+    if (typeof window === 'undefined') return [
+      { id: 'w_cash', name: 'Kas / Tunai', type: 'cash', initial_balance: 0, color: '#10b981', icon: 'Wallet', is_default: true },
+      { id: 'w_bank', name: 'Rekening Bank', type: 'bank', initial_balance: 0, color: '#3b82f6', icon: 'Landmark' },
+      { id: 'w_ewallet', name: 'E-Wallet', type: 'ewallet', initial_balance: 0, color: '#8b5cf6', icon: 'Smartphone' }
+    ];
+    const saved = localStorage.getItem('FINFLOW_WALLETS');
+    if (saved) {
+      try { return JSON.parse(saved); } catch {}
+    }
+    return [
+      { id: 'w_cash', name: 'Kas / Tunai', type: 'cash', initial_balance: 0, color: '#10b981', icon: 'Wallet', is_default: true },
+      { id: 'w_bank', name: 'Rekening Bank', type: 'bank', initial_balance: 0, color: '#3b82f6', icon: 'Landmark' },
+      { id: 'w_ewallet', name: 'E-Wallet', type: 'ewallet', initial_balance: 0, color: '#8b5cf6', icon: 'Smartphone' }
+    ];
+  });
+
+  const saveWallets = (newWallets: Wallet[]) => {
+    setWallets(newWallets);
+    localStorage.setItem('FINFLOW_WALLETS', JSON.stringify(newWallets));
+  };
+
+  const addWallet = (wallet: Omit<Wallet, 'id'>) => {
+    const newW: Wallet = {
+      ...wallet,
+      id: `wallet_${Date.now()}`
+    };
+    saveWallets([...wallets, newW]);
+  };
+
+  const deleteWallet = (id: string) => {
+    saveWallets(wallets.filter((w) => w.id !== id));
+  };
+
+  const updateWallet = (updated: Wallet) => {
+    saveWallets(wallets.map((w) => (w.id === updated.id ? updated : w)));
+  };
+
+  // State Transaksi Berulang (Recurring Bills)
+  const [recurringList, setRecurringList] = useState<RecurringTransaction[]>(() => {
+    if (typeof window === 'undefined') return [];
+    const saved = localStorage.getItem('FINFLOW_RECURRING');
+    if (saved) {
+      try { return JSON.parse(saved); } catch {}
+    }
+    return [];
+  });
+
+  const saveRecurring = (list: RecurringTransaction[]) => {
+    setRecurringList(list);
+    localStorage.setItem('FINFLOW_RECURRING', JSON.stringify(list));
+  };
+
+  const addRecurring = (item: Omit<RecurringTransaction, 'id'>) => {
+    const newItem: RecurringTransaction = {
+      ...item,
+      id: `rec_${Date.now()}`
+    };
+    saveRecurring([...recurringList, newItem]);
+  };
+
+  const deleteRecurring = (id: string) => {
+    saveRecurring(recurringList.filter((r) => r.id !== id));
+  };
+
+  const toggleRecurring = (id: string) => {
+    saveRecurring(recurringList.map((r) => (r.id === id ? { ...r, is_active: !r.is_active } : r)));
+  };
 
   // Ambil data kategori
   const fetchCategories = useCallback(async () => {
@@ -40,9 +113,14 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
 
       if (!error && data) {
         setCategories(data as Category[]);
+        localStorage.setItem(`FINFLOW_CACHE_CAT_${user.id}`, JSON.stringify(data));
       }
     } catch (err: any) {
       console.warn('Gagal fetch categories:', err.message);
+      const cached = localStorage.getItem(`FINFLOW_CACHE_CAT_${user.id}`);
+      if (cached) {
+        try { setCategories(JSON.parse(cached)); } catch {}
+      }
     }
   }, [user]);
 
@@ -57,6 +135,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
 
       if (allData) {
         setAllBudgetSettings(allData as BudgetSettings[]);
+        localStorage.setItem(`FINFLOW_CACHE_BUDGET_${user.id}`, JSON.stringify(allData));
       }
 
       const current = allData?.find((s) => s.month_year === selectedMonthYear);
@@ -80,6 +159,15 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       }
     } catch (err: any) {
       console.warn('Gagal fetch budget settings:', err.message);
+      const cached = localStorage.getItem(`FINFLOW_CACHE_BUDGET_${user.id}`);
+      if (cached) {
+        try {
+          const all = JSON.parse(cached);
+          setAllBudgetSettings(all);
+          const cur = all.find((s: any) => s.month_year === selectedMonthYear);
+          if (cur) setBudgetSettings(cur);
+        } catch {}
+      }
     }
   }, [user, selectedMonthYear]);
 
@@ -106,16 +194,53 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         .order('created_at', { ascending: false });
 
       const formatTxList = (list: any[]): Transaction[] => {
-        return list.map((t: any) => ({
-          ...t,
-          category_name: t.category_name || t.category || 'Umum',
-          main_category: t.main_category || (t.type === 'income' ? 'income' : 'needs'),
-          category_id: t.category_id || null
-        }));
+        return list.map((t: any) => {
+          let wallet = t.wallet_name;
+          const notesStr = t.notes || '';
+          if (!wallet && notesStr) {
+            const match = notesStr.match(/\[Dompet:\s*([^\]]+)\]/);
+            if (match) {
+              wallet = match[1].trim();
+            }
+          }
+          const isFromSavings = Boolean(t.is_from_savings || notesStr.includes('[Pakai Tabungan]'));
+          const isTransfer = Boolean(
+            t.is_transfer ||
+            notesStr.includes('[Pindah Saldo:') ||
+            notesStr.includes('[Transfer:') ||
+            t.category_name === 'Pindah Saldo' ||
+            t.category_name === 'Tarik Tunai'
+          );
+
+          let transferFrom = t.transfer_from;
+          let transferTo = t.transfer_to;
+          if (notesStr) {
+            const matchTransfer = notesStr.match(/\[(?:Pindah Saldo|Transfer):\s*([^-]+)->\s*([^\]]+)\]/);
+            if (matchTransfer) {
+              transferFrom = matchTransfer[1].trim();
+              transferTo = matchTransfer[2].trim();
+            }
+          }
+
+          return {
+            ...t,
+            category_name: t.category_name || t.category || (isTransfer ? 'Pindah Saldo' : isFromSavings ? 'Pakai Tabungan' : 'Umum'),
+            main_category: t.main_category || (t.type === 'income' ? 'income' : (isFromSavings ? 'savings' : 'needs')),
+            category_id: t.category_id || null,
+            wallet_name: wallet || transferFrom || 'Kas / Tunai',
+            is_from_savings: isFromSavings,
+            is_transfer: isTransfer,
+            transfer_from: transferFrom,
+            transfer_to: transferTo
+          };
+        });
       };
 
       if (monthError) throw monthError;
-      setTransactions(formatTxList(monthData || []));
+      const formattedMonth = formatTxList(monthData || []);
+      setTransactions(formattedMonth);
+      localStorage.setItem(`FINFLOW_CACHE_TX_${user.id}_${selectedMonthYear}`, JSON.stringify(formattedMonth));
+      setIsOffline(false);
 
       // 2. Ambil seluruh transaksi untuk analitik multi-bulan (maksimal 6 bulan terakhir)
       const { data: allData, error: allError } = await supabase
@@ -125,15 +250,51 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         .order('date', { ascending: false });
 
       if (!allError && allData) {
-        setAllTransactions(formatTxList(allData || []));
+        const formattedAll = formatTxList(allData || []);
+        setAllTransactions(formattedAll);
+        localStorage.setItem(`FINFLOW_CACHE_ALL_TX_${user.id}`, JSON.stringify(formattedAll));
       }
     } catch (err: any) {
-      console.error('Error fetching transactions:', err);
-      setError(err.message || 'Gagal mengambil data transaksi');
+      console.error('Error fetching transactions (menggunakan cache lokal jika ada):', err);
+      const cachedMonth = localStorage.getItem(`FINFLOW_CACHE_TX_${user.id}_${selectedMonthYear}`);
+      const cachedAll = localStorage.getItem(`FINFLOW_CACHE_ALL_TX_${user.id}`);
+      if (cachedMonth) {
+        try {
+          setTransactions(JSON.parse(cachedMonth));
+          setIsOffline(true);
+          setError(null);
+        } catch {}
+      } else {
+        setError(err.message || 'Gagal mengambil data transaksi');
+      }
+      if (cachedAll) {
+        try {
+          setAllTransactions(JSON.parse(cachedAll));
+        } catch {}
+      }
     } finally {
       setLoading(false);
     }
   }, [user, selectedMonthYear]);
+
+  // Pantau status koneksi online / offline
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      if (user) {
+        fetchCategories();
+        fetchBudgetSettings();
+        fetchTransactions();
+      }
+    };
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [user, fetchCategories, fetchBudgetSettings, fetchTransactions]);
 
   useEffect(() => {
     if (user) {
@@ -171,30 +332,52 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     }
   };
 
-  // Tambah Transaksi Baru
+  // Tambah Transaksi Baru (Termasuk Mutasi / Pindah Saldo Antar Dompet)
   const addTransaction = async (txData: {
-    type: 'income' | 'expense';
+    type: 'income' | 'expense' | 'transfer';
     amount: number;
     title: string;
     main_category: MainCategory;
     category_name: string;
     category_id?: string | null;
+    wallet_name?: string;
+    is_from_savings?: boolean;
+    is_transfer?: boolean;
+    transfer_from?: string;
+    transfer_to?: string;
     date: string;
     notes?: string;
   }) => {
     if (!user) return { error: new Error('User tidak ditemukan'), data: null };
 
     try {
+      const isTransfer = txData.is_transfer || txData.type === 'transfer';
+      const actualType: 'income' | 'expense' = isTransfer ? 'expense' : (txData.type as 'income' | 'expense');
+      const actualMainCategory: MainCategory = isTransfer ? 'needs' : txData.main_category;
+      const selectedWallet = isTransfer
+        ? (txData.transfer_from || txData.wallet_name || 'Kas / Tunai')
+        : (txData.wallet_name || 'Kas / Tunai');
+      const walletTag = `[Dompet: ${selectedWallet}]`;
+
+      let cleanNotes = txData.notes || txData.title;
+      if (isTransfer) {
+        const routeTag = `[Pindah Saldo: ${txData.transfer_from || selectedWallet} -> ${txData.transfer_to || 'Kas / Tunai'}]`;
+        cleanNotes = `${routeTag} ${cleanNotes}`;
+      } else if (txData.is_from_savings && !cleanNotes.includes('[Pakai Tabungan]')) {
+        cleanNotes = `[Pakai Tabungan] ${cleanNotes}`;
+      }
+      const combinedNotes = `${walletTag} ${cleanNotes}`.trim();
+
       const payload: Record<string, any> = {
         user_id: user.id,
-        type: txData.type,
+        type: actualType,
         amount: txData.amount,
         title: txData.title,
-        main_category: txData.main_category,
+        main_category: actualMainCategory,
         category_name: txData.category_name,
         category: txData.category_name, // fallback untuk tabel Supabase versi lama
         date: txData.date,
-        notes: txData.notes || txData.title,
+        notes: combinedNotes,
         created_at: new Date().toISOString()
       };
 
@@ -238,16 +421,27 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       if (error) throw error;
 
       if (data) {
+        const formattedTx: Transaction = {
+          ...(data as Transaction),
+          wallet_name: selectedWallet,
+          is_from_savings: Boolean(txData.is_from_savings || combinedNotes.includes('[Pakai Tabungan]')),
+          is_transfer: isTransfer,
+          transfer_from: txData.transfer_from,
+          transfer_to: txData.transfer_to
+        };
+
         // Jika transaksi jatuh pada bulan yang sedang dilihat
         if (data.date.startsWith(selectedMonthYear)) {
-          setTransactions((prev) => [data as Transaction, ...prev]);
+          setTransactions((prev) => [formattedTx, ...prev]);
         }
-        setAllTransactions((prev) => [data as Transaction, ...prev]);
+        setAllTransactions((prev) => [formattedTx, ...prev]);
 
         // Jika transaksi berupa pemasukan dan monthly_income masih 0, otomatis perbarui monthly_income
         if (data.type === 'income' && budgetSettings.monthly_income === 0) {
           saveBudgetSettings({ monthly_income: data.amount });
         }
+
+        return { error: null, data: formattedTx };
       }
 
       return { error: null, data: data as Transaction };
@@ -356,27 +550,33 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
   // KALKULASI RINGKASAN METRIK BULANAN (MONTH SUMMARY)
   // =========================================================================
   const summary: MonthSummary = useMemo(() => {
-    // Total income: jika user menginput pendapatan di settings, gunakan itu, ditambah jika ada transaksi income
+    // Total income: jika user menginput pendapatan di settings, gunakan itu, ditambah jika ada transaksi income (transfer dikecualikan)
     const incomeFromTransactions = transactions
-      .filter((t) => t.type === 'income')
+      .filter((t) => t.type === 'income' && !t.is_transfer)
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const baseIncome = Number(budgetSettings.monthly_income || 0);
     const totalIncome = Math.max(baseIncome, incomeFromTransactions);
 
-    // Pengeluaran per kategori alokasi
-    const expenseTx = transactions.filter((t) => t.type === 'expense');
+    // Pengeluaran per kategori alokasi (transfer / mutasi antar dompet dikecualikan)
+    const expenseTx = transactions.filter((t) => t.type === 'expense' && !t.is_transfer);
 
+    // Pengeluaran yang diambil khusus dari tabungan (tidak mengurangi uang operasional belanja bulanan)
+    const savingsWithdrawnMonth = expenseTx
+      .filter((t) => t.is_from_savings || (t.notes && t.notes.includes('[Pakai Tabungan]')))
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    // Kebutuhan & Keinginan operasional (tidak termasuk penarikan tabungan)
     const needsExpense = expenseTx
-      .filter((t) => t.main_category === 'needs')
+      .filter((t) => t.main_category === 'needs' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const wantsExpense = expenseTx
-      .filter((t) => t.main_category === 'wants')
+      .filter((t) => t.main_category === 'wants' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const savingsAllocated = expenseTx
-      .filter((t) => t.main_category === 'savings')
+      .filter((t) => t.main_category === 'savings' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const totalExpense = needsExpense + wantsExpense; // Pengeluaran operasional (kebutuhan + keinginan)
@@ -390,6 +590,11 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     const remainingWantsBudget = budgetWants - wantsExpense;
     const remainingTotalBudget = (budgetNeeds + budgetWants) - totalExpense;
 
+    // Uang belanja operasional bulanan (dipisahkan murni dari tabungan)
+    const monthlyOperationalBudget = budgetNeeds + budgetWants;
+    const monthlyOperationalSpent = totalExpense;
+    const monthlyOperationalRemaining = monthlyOperationalBudget - monthlyOperationalSpent;
+
     // Rasio menabung realisasi
     const netSavings = totalIncome - totalExpense;
     const savingsRate = totalIncome > 0 ? ((savingsAllocated + Math.max(0, netSavings - savingsAllocated)) / totalIncome) * 100 : 0;
@@ -397,34 +602,33 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     // Total hari & Sisa hari dalam bulan berjalan
     const { totalDays, daysLeft } = getMonthDaysInfo(selectedMonthYear);
 
-    // Total uang bulanan acuan limit:
-    // Sesuai permintaan: Limit harian membagi total uang bulanan dengan total hari dalam 1 bulan itu
-    const totalMonthlyMoney = totalIncome > 0 ? totalIncome : (budgetNeeds + budgetWants);
+    // Total uang bulanan acuan limit harian & mingguan (fokus pada uang operasional belanja bulanan)
+    const totalMonthlyMoney = monthlyOperationalBudget > 0 ? monthlyOperationalBudget : totalIncome;
 
-    // 1. Limit Harian = Total uang bulanan dibagi total hari dalam 1 bulan (misal 30 atau 31 hari)
+    // 1. Limit Harian = Total uang belanja bulanan dibagi total hari dalam 1 bulan
     const dailyLimit = totalDays > 0 ? Math.round(totalMonthlyMoney / totalDays) : 0;
 
     // 2. Limit Mingguan = Limit Harian dikali 7 hari
     const weeklyLimit = dailyLimit * 7;
 
-    // Pengeluaran Hari Ini (Expenses dengan tanggal hari ini, tidak termasuk pos tabungan)
+    // Pengeluaran Hari Ini (Expenses dengan tanggal hari ini, tidak termasuk pos tabungan / penarikan tabungan)
     const todayStr = new Date().toISOString().split('T')[0];
     const spentToday = expenseTx
-      .filter((t) => t.date === todayStr && t.main_category !== 'savings')
+      .filter((t) => t.date === todayStr && t.main_category !== 'savings' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const remainingToday = dailyLimit - spentToday;
 
-    // Pengeluaran Minggu Ini (Senin sampai hari ini, tidak termasuk pos tabungan)
+    // Pengeluaran Minggu Ini (Senin sampai hari ini, tidak termasuk pos tabungan / penarikan tabungan)
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday...
+    const dayOfWeek = now.getDay();
     const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     const monday = new Date(now);
     monday.setDate(now.getDate() - diffToMonday);
     const mondayStr = monday.toISOString().split('T')[0];
 
     const spentThisWeek = expenseTx
-      .filter((t) => t.date >= mondayStr && t.date <= todayStr && t.main_category !== 'savings')
+      .filter((t) => t.date >= mondayStr && t.date <= todayStr && t.main_category !== 'savings' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const remainingThisWeek = weeklyLimit - spentThisWeek;
@@ -435,7 +639,8 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     const alertMonthly = getAlertStatus(totalExpense, budgetNeeds + budgetWants);
 
     // =========================================================================
-    // KALKULASI SISA UANG DARI BULAN SEBELUMNYA & TOTAL KESELURUHAN UANG (AKUMULATIF)
+    // KALKULASI TABUNGAN AKUMULATIF (DIPISAHKAN DARI UANG BULANAN)
+    // Sisa uang operasional dari bulan-bulan lalu otomatis masuk ke Tabungan!
     // =========================================================================
     const monthKeys = new Set<string>();
     allTransactions.forEach((t) => {
@@ -445,40 +650,75 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       if (s.month_year) monthKeys.add(s.month_year);
     });
 
+    let pastMonthsSavings = 0;
+    let pastMonthsUnspentSurplus = 0;
     let previousMonthCarryover = 0;
 
     monthKeys.forEach((m) => {
-      // Hanya hitung sisa dari bulan-bulan sebelum bulan terpilih (m < selectedMonthYear)
       if (m < selectedMonthYear) {
-        const mIncomeTx = allTransactions
-          .filter((t) => t.date.startsWith(m) && t.type === 'income')
-          .reduce((sum, t) => sum + Number(t.amount), 0);
-
         const mSetting = allBudgetSettings.find((s) => s.month_year === m);
-        const mBaseIncome = Number(mSetting?.monthly_income || 0);
-        const mTotalIncome = Math.max(mBaseIncome, mIncomeTx);
+        const mIncomeSetting = Number(mSetting?.monthly_income || 0);
+        const mNeedsPct = Number(mSetting?.needs_percentage || 50);
+        const mWantsPct = Number(mSetting?.wants_percentage || 20);
+        const mSavingsPct = Number(mSetting?.savings_percentage || 30);
 
-        const mTotalExpense = allTransactions
-          .filter((t) => t.date.startsWith(m) && t.type === 'expense')
-          .reduce((sum, t) => sum + Number(t.amount), 0);
+        const mTx = allTransactions.filter((t) => t.date && t.date.startsWith(m) && !t.is_transfer);
+        const mIncomeTx = mTx.filter((t) => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0);
+        const mIncome = Math.max(mIncomeSetting, mIncomeTx);
 
-        const mNetSavings = mTotalIncome - mTotalExpense;
-        previousMonthCarryover += mNetSavings;
+        const mNeedsBudget = Math.round((mIncome * mNeedsPct) / 100);
+        const mWantsBudget = Math.round((mIncome * mWantsPct) / 100);
+        const mSavingsBudget = Math.round((mIncome * mSavingsPct) / 100);
+
+        const mNeedsSpent = mTx
+          .filter((t) => t.type === 'expense' && t.main_category === 'needs' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
+          .reduce((s, t) => s + Number(t.amount), 0);
+        const mWantsSpent = mTx
+          .filter((t) => t.type === 'expense' && t.main_category === 'wants' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
+          .reduce((s, t) => s + Number(t.amount), 0);
+        const mSavingsSpent = mTx
+          .filter((t) => t.type === 'expense' && t.main_category === 'savings' && !t.is_from_savings && !(t.notes && t.notes.includes('[Pakai Tabungan]')))
+          .reduce((s, t) => s + Number(t.amount), 0);
+
+        pastMonthsSavings += Math.max(mSavingsBudget, mSavingsSpent);
+
+        // Uang berlebih dari kebutuhan & keinginan di akhir bulan langsung masuk tabungan
+        const mUnspentSurplus = Math.max(0, (mNeedsBudget + mWantsBudget) - (mNeedsSpent + mWantsSpent));
+        pastMonthsUnspentSurplus += mUnspentSurplus;
+
+        const mTotalExpense = mNeedsSpent + mWantsSpent + mSavingsSpent;
+        previousMonthCarryover += (mIncome - mTotalExpense);
       }
     });
 
-    // Total keseluruhan uang yang ada sampai bulan terpilih ini:
-    // (Akumulasi sisa uang dari bulan-bulan sebelumnya) + (Saldo bersih bulan ini)
-    const cumulativeTotalBalance = previousMonthCarryover + netSavings;
+    // Tabungan bulan berjalan yang disisihkan
+    const currentMonthPlannedSavings = Math.max(budgetSavings, savingsAllocated);
 
-    // Total saldo kas sepanjang masa (Lifetime seluruh transaksi)
+    // Total seluruh penarikan / pemakaian uang dari tabungan sepanjang waktu
+    const lifetimeSavingsWithdrawn = allTransactions
+      .filter((t) => !t.is_transfer && t.type === 'expense' && (t.is_from_savings || (t.notes && t.notes.includes('[Pakai Tabungan]'))))
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    // Total Tabungan Terakumulasi Bersih (termasuk surplus akhir bulan yang otomatis masuk):
+    const totalSavingsAccumulated = Math.max(
+      0,
+      pastMonthsSavings + pastMonthsUnspentSurplus + currentMonthPlannedSavings - lifetimeSavingsWithdrawn
+    );
+
+    // Total modal awal dari semua dompet yang didaftarkan
+    const totalWalletsInitialBalance = wallets.reduce((sum, w) => sum + Number(w.initial_balance || 0), 0);
+
+    // Total saldo kas sepanjang masa (Lifetime seluruh transaksi + modal awal dompet)
     const lifetimeIncome = allTransactions
-      .filter((t) => t.type === 'income')
+      .filter((t) => !t.is_transfer && t.type === 'income')
       .reduce((sum, t) => sum + Number(t.amount), 0);
     const lifetimeExpense = allTransactions
-      .filter((t) => t.type === 'expense')
+      .filter((t) => !t.is_transfer && t.type === 'expense')
       .reduce((sum, t) => sum + Number(t.amount), 0);
-    const lifetimeTotalBalance = lifetimeIncome - lifetimeExpense;
+    const lifetimeTotalBalance = totalWalletsInitialBalance + lifetimeIncome - lifetimeExpense;
+
+    // Total Uang Kas Nyata Kumulatif (Identik dengan total seluruh saldo dompet saat ini)
+    const cumulativeTotalBalance = lifetimeTotalBalance;
 
     return {
       month_year: selectedMonthYear,
@@ -506,11 +746,17 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
       cumulative_total_balance: cumulativeTotalBalance,
       previous_month_carryover: previousMonthCarryover,
       lifetime_total_balance: lifetimeTotalBalance,
+      monthly_operational_budget: monthlyOperationalBudget,
+      monthly_operational_spent: monthlyOperationalSpent,
+      monthly_operational_remaining: monthlyOperationalRemaining,
+      total_savings_accumulated: totalSavingsAccumulated,
+      savings_withdrawn_total: lifetimeSavingsWithdrawn,
+      total_all_money: lifetimeTotalBalance,
       alert_level_daily: alertDaily,
       alert_level_weekly: alertWeekly,
       alert_level_monthly: alertMonthly
     };
-  }, [transactions, budgetSettings, selectedMonthYear, allTransactions, allBudgetSettings]);
+  }, [transactions, budgetSettings, selectedMonthYear, allTransactions, allBudgetSettings, wallets]);
 
   // =========================================================================
   // ANALISIS PERBANDINGAN ANTAR BULAN (MONTH-OVER-MONTH DATA)
@@ -519,6 +765,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     const map = new Map<string, { month: string; income: number; expense: number; savings: number }>();
 
     allTransactions.forEach((t) => {
+      if (t.is_transfer) return;
       const m = t.date.substring(0, 7); // 'YYYY-MM'
       if (!map.has(m)) {
         map.set(m, { month: m, income: 0, expense: 0, savings: 0 });
@@ -615,7 +862,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     // 4. Kategori Pengeluaran Terbesar (Highest Spending Category)
     const categoryTotals: Record<string, number> = {};
     transactions
-      .filter((t) => t.type === 'expense' && t.main_category !== 'savings')
+      .filter((t) => !t.is_transfer && t.type === 'expense' && t.main_category !== 'savings')
       .forEach((t) => {
         categoryTotals[t.category_name] = (categoryTotals[t.category_name] || 0) + Number(t.amount);
       });
@@ -634,6 +881,94 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     return recs;
   }, [summary, budgetSettings, transactions]);
 
+  // Kalkulasi Saldo Dompet Real-Time (Termasuk Mutasi / Pindah Saldo Antar Dompet)
+  const walletsWithBalances = useMemo(() => {
+    return wallets.map((w) => {
+      const wName = w.name.toLowerCase();
+      const isDefault = Boolean(w.is_default);
+
+      // 1. Transaksi reguler (bukan transfer)
+      const regularTx = allTransactions.filter((t) => {
+        if (t.is_transfer) return false;
+        const notesStr = t.notes || '';
+        if (notesStr.includes('[Pindah Saldo:') || notesStr.includes('[Transfer:')) return false;
+
+        const tWallet = (t.wallet_name || 'Kas / Tunai').toLowerCase();
+        return tWallet === wName || (isDefault && (tWallet === 'kas / tunai' || !t.wallet_name));
+      });
+
+      const totalIn = regularTx
+        .filter((t) => t.type === 'income')
+        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+      const totalOut = regularTx
+        .filter((t) => t.type === 'expense')
+        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+      // 2. Transfer Masuk (Saldo masuk ke dompet tujuan ini)
+      const transferInTx = allTransactions.filter((t) => {
+        const isTransfer = Boolean(
+          t.is_transfer ||
+          (t.notes && (t.notes.includes('[Pindah Saldo:') || t.notes.includes('[Transfer:')))
+        );
+        if (!isTransfer) return false;
+        const toWallet = (t.transfer_to || '').toLowerCase();
+        return toWallet === wName || (isDefault && toWallet === 'kas / tunai');
+      });
+      const transferIn = transferInTx.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+      // 3. Transfer Keluar (Saldo berkurang dari dompet asal ini)
+      const transferOutTx = allTransactions.filter((t) => {
+        const isTransfer = Boolean(
+          t.is_transfer ||
+          (t.notes && (t.notes.includes('[Pindah Saldo:') || t.notes.includes('[Transfer:')))
+        );
+        if (!isTransfer) return false;
+        const fromWallet = (t.transfer_from || t.wallet_name || '').toLowerCase();
+        return fromWallet === wName || (isDefault && (fromWallet === 'kas / tunai' || !fromWallet));
+      });
+      const transferOut = transferOutTx.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+      const currentBalance = Number(w.initial_balance || 0) + totalIn + transferIn - totalOut - transferOut;
+
+      return {
+        ...w,
+        current_balance: currentBalance,
+        total_in: totalIn + transferIn,
+        total_out: totalOut + transferOut,
+        transaction_count: regularTx.length + transferInTx.length + transferOutTx.length
+      };
+    });
+  }, [wallets, allTransactions]);
+
+  // Eksekusi / Proses Tagihan Rutin ke Bulan Terpilih
+  const processRecurring = async (recId: string) => {
+    const rec = recurringList.find((r) => r.id === recId);
+    if (!rec) return { error: new Error('Tagihan rutin tidak ditemukan'), data: null };
+
+    const [year, month] = selectedMonthYear.split('-');
+    const targetDay = String(Math.min(rec.day_of_month || 1, 28)).padStart(2, '0');
+    const txDate = `${year}-${month}-${targetDay}`;
+
+    const res = await addTransaction({
+      type: rec.type,
+      amount: rec.amount,
+      title: rec.title,
+      main_category: rec.main_category,
+      category_name: rec.category_name,
+      wallet_name: rec.wallet_name || 'Kas / Tunai',
+      date: txDate,
+      notes: `[Tagihan Rutin ${rec.frequency}] ${rec.notes || rec.title}`
+    });
+
+    if (!res.error) {
+      const updated = recurringList.map((r) =>
+        r.id === recId ? { ...r, last_processed_month: selectedMonthYear } : r
+      );
+      saveRecurring(updated);
+    }
+    return res;
+  };
+
   return {
     transactions,
     allTransactions,
@@ -641,6 +976,16 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     categories,
     loading,
     error,
+    isOffline,
+    wallets: walletsWithBalances,
+    addWallet,
+    deleteWallet,
+    updateWallet,
+    recurringList,
+    addRecurring,
+    deleteRecurring,
+    toggleRecurring,
+    processRecurring,
     summary,
     recommendations,
     monthlyComparison,

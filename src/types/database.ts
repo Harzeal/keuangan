@@ -34,6 +34,38 @@ export interface Category {
   created_at?: string;
 }
 
+export type WalletType = 'cash' | 'bank' | 'ewallet' | 'investment' | 'other';
+
+export interface Wallet {
+  id: string;
+  user_id?: string;
+  name: string;
+  type: WalletType;
+  initial_balance: number;
+  color: string;
+  icon: string;
+  account_number?: string;
+  is_default?: boolean;
+}
+
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface RecurringTransaction {
+  id: string;
+  user_id?: string;
+  title: string;
+  amount: number;
+  type: 'income' | 'expense';
+  main_category: MainCategory;
+  category_name: string;
+  wallet_name: string;
+  frequency: RecurringFrequency;
+  day_of_month: number;
+  is_active: boolean;
+  last_processed_month?: string | null;
+  notes?: string;
+}
+
 export interface Transaction {
   id: string;
   user_id: string;
@@ -43,6 +75,11 @@ export interface Transaction {
   main_category: MainCategory;
   category_name: string;
   category_id?: string | null;
+  wallet_name?: string;
+  is_from_savings?: boolean;
+  is_transfer?: boolean;
+  transfer_from?: string;
+  transfer_to?: string;
   date: string; // 'YYYY-MM-DD'
   notes?: string | null;
   created_at?: string;
@@ -74,6 +111,12 @@ export interface MonthSummary {
   cumulative_total_balance: number;
   previous_month_carryover: number;
   lifetime_total_balance: number;
+  monthly_operational_budget: number;
+  monthly_operational_spent: number;
+  monthly_operational_remaining: number;
+  total_savings_accumulated: number;
+  savings_withdrawn_total: number;
+  total_all_money: number;
   alert_level_daily: 'safe' | 'warning' | 'danger';
   alert_level_weekly: 'safe' | 'warning' | 'danger';
   alert_level_monthly: 'safe' | 'warning' | 'danger';

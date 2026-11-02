@@ -485,3 +485,38 @@ export async function markAllNotificationsAsRead(userId: string): Promise<void> 
     console.warn('Gagal mark all notifications as read:', err);
   }
 }
+
+
+/**
+ * Jadwalkan pengingat harian jam 20:00 secara native di Android
+ * Tetap berbunyi meskipun aplikasi ditutup / layar terkunci
+ */
+export async function scheduleDailyReminderNative(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const pending = await LocalNotifications.getPending();
+    const exists = pending.notifications.some((n) => n.id === 2000);
+    if (!exists) {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: 2000,
+            title: '⏰ Pengingat Catat Keuangan — FinFlow',
+            body: 'Sudah jam 8 malam! Yuk luangkan 1 menit untuk mencatat pengeluaran & pemasukan hari ini.',
+            schedule: {
+              on: {
+                hour: 20,
+                minute: 0
+              },
+              repeats: true,
+              allowWhileIdle: true
+            }
+          }
+        ]
+      });
+      console.log('Notifikasi harian native jam 20:00 berhasil dijadwalkan.');
+    }
+  } catch (err) {
+    console.warn('Gagal menjadwalkan notifikasi harian native:', err);
+  }
+}
