@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   PieChart,
@@ -9,11 +9,9 @@ import {
   ShoppingBag,
   Home,
   ShieldCheck,
-  Save,
   RotateCcw
 } from 'lucide-react';
 import { BudgetSettings, MonthSummary } from '../../types/database';
-import { AnimatedCounter } from '../common/AnimatedCounter';
 import { formatRupiah, parseRupiahInput } from '../../lib/utils';
 
 interface BudgetAllocationCardProps {
@@ -39,14 +37,15 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
   const [wantsNominalStr, setWantsNominalStr] = useState<string>('');
   const [savingsNominalStr, setSavingsNominalStr] = useState<string>('');
 
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  // Status Penyimpanan Otomatis (Real-time Auto-Save)
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+  const isInitialMount = useRef(true);
+  const lastSavedValues = useRef<string>('');
 
   const currentIncomeNumber = parseRupiahInput(incomeInput);
 
-  // Sinkronkan state saat prop budgetSettings atau summary.income berubah
+  // Sinkronkan state lokal saat bulan atau data awal dimuat
   useEffect(() => {
-    // Prioritaskan total pemasukan riil dari transaksi jika ada, atau dari budgetSettings
     const effectiveIncome = summary.income > 0 ? summary.income : Number(budgetSettings?.monthly_income || 0);
     setIncomeInput(effectiveIncome > 0 ? effectiveIncome.toLocaleString('id-ID') : '');
 
@@ -62,7 +61,48 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
       setWantsNominalStr(formatRupiah(Math.round((effectiveIncome * wp) / 100)));
       setSavingsNominalStr(formatRupiah(Math.round((effectiveIncome * sp) / 100)));
     }
-  }, [budgetSettings, summary.income]);
+
+    lastSavedValues.current = `${effectiveIncome}-${np}-${wp}-${sp}`;
+  }, [budgetSettings?.month_year, summary.income]);
+
+  const totalPercentage = needsPercent + wantsPercent + savingsPercent;
+  const is100Percent = totalPercentage === 100;
+
+  // Auto-Save Effect: Otomatis Menyimpan Langsung Tanpa Perlu Menekan Tombol Simpan
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    const currentKey = `${currentIncomeNumber}-${needsPercent}-${wantsPercent}-${savingsPercent}`;
+    if (currentKey === lastSavedValues.current) {
+      return;
+    }
+
+    if (!is100Percent) {
+      setSaveStatus('unsaved');
+      return;
+    }
+
+    setSaveStatus('saving');
+
+    const timer = setTimeout(async () => {
+      const { error } = await onSave({
+        monthly_income: currentIncomeNumber,
+        needs_percentage: needsPercent,
+        wants_percentage: wantsPercent,
+        savings_percentage: savingsPercent
+      });
+
+      if (!error) {
+        lastSavedValues.current = currentKey;
+        setSaveStatus('saved');
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [currentIncomeNumber, needsPercent, wantsPercent, savingsPercent, is100Percent, onSave]);
 
   // Handler saat income bulanan diedit manual
   const handleIncomeChange = (valStr: string) => {
@@ -145,30 +185,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
     }
   };
 
-  const totalPercentage = needsPercent + wantsPercent + savingsPercent;
-  const is100Percent = totalPercentage === 100;
-
-  // Handler Simpan
-  const handleSave = async () => {
-    if (!is100Percent) return;
-    setIsSaving(true);
-    setSaveSuccess(false);
-
-    const { error } = await onSave({
-      monthly_income: currentIncomeNumber,
-      needs_percentage: needsPercent,
-      wants_percentage: wantsPercent,
-      savings_percentage: savingsPercent
-    });
-
-    setIsSaving(false);
-    if (!error) {
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-    }
-  };
-
-  // Preset Template (Pasti Pas 100%)
+  // Preset Template (Pasti Pas 100% dan Langsung Tersimpan Otomatis)
   const applyPreset = (needs: number, wants: number, savings: number) => {
     setNeedsPercent(needs);
     setWantsPercent(wants);
@@ -282,7 +299,7 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-sm text-slate-400">
                 Rp
@@ -292,34 +309,29 @@ export const BudgetAllocationCard: React.FC<BudgetAllocationCardProps> = ({
                 placeholder="0"
                 value={incomeInput}
                 onChange={(e) => handleIncomeChange(e.target.value)}
-                className="w-48 sm:w-56 pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-base font-extrabold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                className="w-48 sm:w-56 pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-base font-extrabold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               />
             </div>
 
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={handleSave}
-              disabled={isSaving || !is100Percent}
-              className={`px-4 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 shadow-md transition ${
-                saveSuccess
-                  ? 'bg-emerald-600 shadow-emerald-500/20'
-                  : 'bg-brand-600 hover:bg-brand-500 shadow-brand-500/20 disabled:opacity-50'
-              }`}
-            >
-              {saveSuccess ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>Tersimpan!</span>
-                </>
-              ) : isSaving ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            {/* Status Penyimpanan Otomatis (Live Auto-Save) */}
+            <div className="shrink-0">
+              {saveStatus === 'saving' ? (
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-3 py-2 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                  <div className="w-3.5 h-3.5 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                  <span>Menyimpan...</span>
+                </span>
+              ) : is100Percent ? (
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800/80">
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Tersimpan Otomatis</span>
+                </span>
               ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>Simpan</span>
-                </>
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-800/80">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Belum 100%</span>
+                </span>
               )}
-            </motion.button>
+            </div>
           </div>
         </div>
       </div>
