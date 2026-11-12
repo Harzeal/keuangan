@@ -910,26 +910,124 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
   };
 
   // Edit / Update Transaksi
-  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
-    if (!user) return { error: new Error('User tidak ditemukan') };
+  const updateTransaction = async (
+    id: string,
+    txData: {
+      type: 'income' | 'expense' | 'transfer';
+      amount: number;
+      title: string;
+      main_category: MainCategory;
+      category_name: string;
+      category_id?: string | null;
+      wallet_name?: string;
+      is_from_savings?: boolean;
+      is_transfer?: boolean;
+      transfer_from?: string;
+      transfer_to?: string;
+      date: string;
+      notes?: string;
+    }
+  ) => {
+    if (!user) return { error: new Error('User tidak ditemukan'), data: null };
     try {
-      const { data, error } = await supabase
+      const isTransfer = txData.is_transfer || txData.type === 'transfer';
+      const actualType: 'income' | 'expense' = isTransfer ? 'expense' : (txData.type as 'income' | 'expense');
+      const actualMainCategory: MainCategory = isTransfer ? 'needs' : txData.main_category;
+      const selectedWallet = isTransfer
+        ? (txData.transfer_from || txData.wallet_name || 'Kas / Tunai')
+        : (txData.wallet_name || 'Kas / Tunai');
+      const walletTag = `[Dompet: ${selectedWallet}]`;
+
+      let cleanNotes = txData.title;
+      if (isTransfer) {
+        const routeTag = `[Pindah Saldo: ${txData.transfer_from || selectedWallet} -> ${txData.transfer_to || 'Kas / Tunai'}]`;
+        cleanNotes = `${routeTag} ${cleanNotes}`;
+      } else if (txData.is_from_savings && !cleanNotes.includes('[Pakai Tabungan]')) {
+        cleanNotes = `[Pakai Tabungan] ${cleanNotes}`;
+      }
+      const combinedNotes = `${walletTag} ${cleanNotes}`.trim();
+
+      const payload: Record<string, any> = {
+        type: actualType,
+        amount: txData.amount,
+        title: txData.title,
+        main_category: actualMainCategory,
+        category_name: txData.category_name,
+        category: txData.category_name,
+        date: txData.date,
+        notes: combinedNotes
+      };
+
+      if (txData.type !== 'income' && txData.category_id && typeof txData.category_id === 'string' && txData.category_id.trim() !== '') {
+        payload.category_id = txData.category_id.trim();
+      }
+
+      let { data, error } = await supabase
         .from('transactions')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .eq('user_id', user.id)
         .select()
         .single();
 
+      if (error && error.message && error.message.toLowerCase().includes('category_id')) {
+        delete payload.category_id;
+        const retryResult = await supabase
+          .from('transactions')
+          .update(payload)
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select()
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
+      if (error && error.message && error.message.toLowerCase().includes('category_name')) {
+        delete payload.category_name;
+        const retryResult = await supabase
+          .from('transactions')
+          .update(payload)
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select()
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
       if (error) throw error;
 
-      if (data) {
-        setTransactions((prev) => prev.map((t) => (t.id === id ? (data as Transaction) : t)));
-        setAllTransactions((prev) => prev.map((t) => (t.id === id ? (data as Transaction) : t)));
-      }
-      return { error: null };
+      const formattedTx: Transaction = {
+        ...((data || { id, user_id: user.id, ...payload }) as Transaction),
+        wallet_name: selectedWallet,
+        is_from_savings: Boolean(txData.is_from_savings || combinedNotes.includes('[Pakai Tabungan]')),
+        is_transfer: isTransfer,
+        transfer_from: txData.transfer_from,
+        transfer_to: txData.transfer_to
+      };
+
+      const nextMonthTx = transactions.some((t) => t.id === id)
+        ? formattedTx.date.startsWith(selectedMonthYear)
+          ? transactions.map((t) => (t.id === id ? formattedTx : t))
+          : transactions.filter((t) => t.id !== id)
+        : formattedTx.date.startsWith(selectedMonthYear)
+        ? [formattedTx, ...transactions]
+        : transactions;
+
+      setTransactions(nextMonthTx);
+      setAllTransactions((prev) => prev.map((t) => (t.id === id ? formattedTx : t)));
+
+      // Perbarui akumulasi monthly_income bulan berjalan
+      const currentMonthIncomeTx = nextMonthTx.filter(
+        (t) => t.type === 'income' && !t.is_transfer && t.date.startsWith(selectedMonthYear)
+      );
+      const totalMonthIncome = currentMonthIncomeTx.reduce((sum, t) => sum + Number(t.amount), 0);
+      saveBudgetSettings({ monthly_income: totalMonthIncome });
+
+      return { error: null, data: formattedTx };
     } catch (err: any) {
-      return { error: err };
+      return { error: err, data: null };
     }
   };
 

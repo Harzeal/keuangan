@@ -98,6 +98,7 @@ export const App: React.FC = () => {
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
   const [isAddFromSavings, setIsAddFromSavings] = useState(false);
   const [addModalInitialType, setAddModalInitialType] = useState<'income' | 'expense' | 'transfer'>('expense');
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -127,6 +128,7 @@ export const App: React.FC = () => {
     monthlyComparison,
     addTransaction,
     deleteTransaction,
+    updateTransaction,
     saveBudgetSettings,
     addCustomCategory,
     updateCustomCategory,
@@ -255,6 +257,7 @@ export const App: React.FC = () => {
     type: 'income' | 'expense' | 'transfer' = 'expense',
     fromSavings: boolean = false
   ) => {
+    setEditingTransaction(null);
     setAddModalInitialType(type);
     setIsAddFromSavings(fromSavings);
     setIsAddModalOpen(true);
@@ -432,6 +435,10 @@ export const App: React.FC = () => {
                   recommendations={recommendations}
                   privacyMode={privacyMode}
                   onOpenAddModal={openAddModalWithConfig}
+                  onEditTransaction={(tx) => {
+                    setEditingTransaction(tx);
+                    setIsAddModalOpen(true);
+                  }}
                   onNavigateTab={setActiveTab}
                   selectedWalletFilter={selectedWalletFilter}
                   onSelectWalletFilter={(w) => {
@@ -456,6 +463,10 @@ export const App: React.FC = () => {
                   wallets={wallets}
                   privacyMode={privacyMode}
                   onDeleteTransaction={deleteTransaction}
+                  onEditTransaction={(tx) => {
+                    setEditingTransaction(tx);
+                    setIsAddModalOpen(true);
+                  }}
                   onOpenAddModal={() => openAddModalWithConfig('expense', false)}
                   selectedWalletFilter={selectedWalletFilter}
                   onSelectWalletFilter={setSelectedWalletFilter}
@@ -726,10 +737,16 @@ export const App: React.FC = () => {
             wallets={wallets}
             initialType={addModalInitialType}
             initialIsFromSavings={isAddFromSavings}
-            onClose={() => setIsAddModalOpen(false)}
+            editingTransaction={editingTransaction}
+            onClose={() => {
+              setIsAddModalOpen(false);
+              setEditingTransaction(null);
+            }}
             onSubmit={addTransaction}
+            onUpdate={updateTransaction}
             onOpenCategoryManager={() => {
               setIsAddModalOpen(false);
+              setEditingTransaction(null);
               setIsCategoryModalOpen(true);
             }}
           />

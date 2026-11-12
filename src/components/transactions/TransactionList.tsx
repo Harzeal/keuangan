@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
   Filter,
+  Pencil,
   Trash2,
   ArrowUpRight,
   ArrowDownRight,
@@ -20,6 +21,7 @@ interface TransactionListProps {
   wallets?: Wallet[];
   privacyMode: boolean;
   onDeleteTransaction: (id: string) => Promise<{ error: any }>;
+  onEditTransaction?: (tx: Transaction) => void;
   onOpenAddModal: () => void;
   selectedWalletFilter?: string | null;
   onSelectWalletFilter?: (walletName: string | null) => void;
@@ -30,6 +32,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   wallets,
   privacyMode,
   onDeleteTransaction,
+  onEditTransaction,
   onOpenAddModal,
   selectedWalletFilter,
   onSelectWalletFilter
@@ -339,8 +342,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     </div>
                   </div>
 
-                  {/* Right: Nominal & Delete Action */}
-                  <div className="flex items-center gap-3 shrink-0">
+                  {/* Right: Nominal & Edit/Delete Actions */}
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     <div className="text-right">
                       <p
                         className={`text-xs sm:text-sm font-black tracking-tight ${
@@ -361,14 +364,28 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       </p>
                     </div>
 
-                    <button
-                      onClick={() => handleDelete(tx.id)}
-                      disabled={deletingId === tx.id}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                      title="Hapus Transaksi"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                      {onEditTransaction && (
+                        <button
+                          type="button"
+                          onClick={() => onEditTransaction(tx)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition"
+                          title="Edit Transaksi"
+                        >
+                          <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(tx.id)}
+                        disabled={deletingId === tx.id}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                        title="Hapus Transaksi"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      </button>
+                    </div>
                   </div>
                 </motion.div>
               );

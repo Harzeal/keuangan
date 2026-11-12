@@ -15,7 +15,8 @@ import {
   ChevronRight,
   Sparkles,
   Home,
-  ShoppingBag
+  ShoppingBag,
+  Pencil
 } from 'lucide-react';
 import {
   MonthSummary,
@@ -54,6 +55,7 @@ interface BentoDashboardV24Props {
   recommendations: SmartRecommendation[];
   privacyMode: boolean;
   onOpenAddModal: (initialType?: 'income' | 'expense' | 'transfer', fromSavings?: boolean) => void;
+  onEditTransaction?: (tx: Transaction) => void;
   onNavigateTab: (tab: NavTabId) => void;
   selectedWalletFilter: string | null;
   onSelectWalletFilter: (walletName: string | null) => void;
@@ -71,6 +73,7 @@ export const BentoDashboardV24: React.FC<BentoDashboardV24Props> = ({
   recommendations,
   privacyMode,
   onOpenAddModal,
+  onEditTransaction,
   onNavigateTab,
   selectedWalletFilter,
   onSelectWalletFilter
@@ -912,19 +915,31 @@ export const BentoDashboardV24: React.FC<BentoDashboardV24Props> = ({
                       </div>
                     </div>
 
-                    <span
-                      className={`text-[11px] sm:text-xs font-extrabold tabular-nums shrink-0 ${
-                        tx.is_transfer
-                          ? 'text-indigo-600 dark:text-indigo-400'
-                          : isIncome
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-slate-900 dark:text-slate-100'
-                      }`}
-                    >
-                      {privacyMode
-                        ? '••••••'
-                        : `${tx.is_transfer ? '⇄' : isIncome ? '+' : '-'}${formatRupiah(tx.amount)}`}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={`text-[11px] sm:text-xs font-extrabold tabular-nums ${
+                          tx.is_transfer
+                            ? 'text-indigo-600 dark:text-indigo-400'
+                            : isIncome
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-slate-900 dark:text-slate-100'
+                        }`}
+                      >
+                        {privacyMode
+                          ? '••••••'
+                          : `${tx.is_transfer ? '⇄' : isIncome ? '+' : '-'}${formatRupiah(tx.amount)}`}
+                      </span>
+                      {onEditTransaction && (
+                        <button
+                          type="button"
+                          onClick={() => onEditTransaction(tx)}
+                          className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                          title="Edit Transaksi"
+                        >
+                          <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

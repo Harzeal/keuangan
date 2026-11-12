@@ -17,7 +17,7 @@ import {
   ShieldCheck,
   Check
 } from 'lucide-react';
-import { Category, MainCategory, Wallet } from '../../types/database';
+import { Category, MainCategory, Transaction, Wallet } from '../../types/database';
 import { formatRupiah, parseRupiahInput, terbilang } from '../../lib/utils';
 
 interface AddTransactionModalProps {
@@ -25,6 +25,7 @@ interface AddTransactionModalProps {
   wallets?: Wallet[];
   initialType?: 'income' | 'expense' | 'transfer';
   initialIsFromSavings?: boolean;
+  editingTransaction?: Transaction | null;
   onClose: () => void;
   onSubmit: (tx: {
     type: 'income' | 'expense' | 'transfer';
@@ -41,6 +42,24 @@ interface AddTransactionModalProps {
     date: string;
     notes?: string;
   }) => Promise<{ error: any; data: any }>;
+  onUpdate?: (
+    id: string,
+    tx: {
+      type: 'income' | 'expense' | 'transfer';
+      amount: number;
+      title: string;
+      main_category: MainCategory;
+      category_name: string;
+      category_id?: string | null;
+      wallet_name?: string;
+      is_from_savings?: boolean;
+      is_transfer?: boolean;
+      transfer_from?: string;
+      transfer_to?: string;
+      date: string;
+      notes?: string;
+    }
+  ) => Promise<{ error: any; data: any }>;
   onOpenCategoryManager: () => void;
 }
 
@@ -49,35 +68,62 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   wallets,
   initialType = 'expense',
   initialIsFromSavings = false,
+  editingTransaction = null,
   onClose,
   onSubmit,
+  onUpdate,
   onOpenCategoryManager
 }) => {
-  const [type, setType] = useState<'income' | 'expense' | 'transfer'>(initialType);
-  const [isFromSavings, setIsFromSavings] = useState<boolean>(initialIsFromSavings);
-  const [amountStr, setAmountStr] = useState<string>('');
-  const [selectedWalletName, setSelectedWalletName] = useState<string>(
-    wallets && wallets.length > 0 ? wallets[0].name : 'Kas / Tunai'
+  const isEditing = Boolean(editingTransaction);
+  const [type, setType] = useState<'income' | 'expense' | 'transfer'>(() => {
+    if (editingTransaction) {
+      if (editingTransaction.is_transfer) return 'transfer';
+      return editingTransaction.type;
+    }
+    return initialType;
+  });
+  const [isFromSavings, setIsFromSavings] = useState<boolean>(() =>
+    editingTransaction ? Boolean(editingTransaction.is_from_savings) : initialIsFromSavings
   );
+  const [amountStr, setAmountStr] = useState<string>(() =>
+    editingTransaction ? Number(editingTransaction.amount).toLocaleString('id-ID') : ''
+  );
+  const [selectedWalletName, setSelectedWalletName] = useState<string>(() => {
+    if (editingTransaction?.wallet_name) return editingTransaction.wallet_name;
+    return wallets && wallets.length > 0 ? wallets[0].name : 'Kas / Tunai';
+  });
 
   // State khusus Pindah Saldo / Transfer
   const [transferFrom, setTransferFrom] = useState<string>(() => {
+    if (editingTransaction?.transfer_from) return editingTransaction.transfer_from;
     const bankWallet = wallets?.find((w) => w.type === 'bank');
     return bankWallet ? bankWallet.name : wallets && wallets.length > 0 ? wallets[0].name : 'Kas / Tunai';
   });
 
   const [transferTo, setTransferTo] = useState<string>(() => {
+    if (editingTransaction?.transfer_to) return editingTransaction.transfer_to;
     const ewallet = wallets?.find((w) => w.type === 'ewallet');
     if (ewallet) return ewallet.name;
     if (wallets && wallets.length > 1) return wallets[1].name;
     return 'Kas / Tunai';
   });
 
-  const [mainCategory, setMainCategory] = useState<MainCategory>(initialIsFromSavings ? 'savings' : 'needs');
-  const [selectedCategoryName, setSelectedCategoryName] = useState<string>('');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [title, setTitle] = useState<string>('');
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [mainCategory, setMainCategory] = useState<MainCategory>(() => {
+    if (editingTransaction && editingTransaction.main_category !== 'income') {
+      return editingTransaction.main_category;
+    }
+    return initialIsFromSavings ? 'savings' : 'needs';
+  });
+  const [selectedCategoryName, setSelectedCategoryName] = useState<string>(
+    editingTransaction?.category_name || ''
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    editingTransaction?.category_id || null
+  );
+  const [title, setTitle] = useState<string>(editingTransaction?.title || '');
+  const [date, setDate] = useState<string>(
+    editingTransaction?.date || new Date().toISOString().split('T')[0]
+  );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,11 +202,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
       setLoading(true);
 
-      const { error: submitErr } = await onSubmit({
-        type: 'transfer',
+      const transferPayload = {
+        type: 'transfer' as const,
         amount: amountNumber,
         title: title.trim(),
-        main_category: 'needs',
+        main_category: 'needs' as MainCategory,
         category_name: 'Pindah Saldo',
         wallet_name: transferFrom,
         is_transfer: true,
@@ -168,7 +214,12 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         transfer_to: transferTo,
         date,
         notes: `[Pindah Saldo: ${transferFrom} -> ${transferTo}] ${title.trim()}`
-      });
+      };
+
+      const { error: submitErr } =
+        isEditing && editingTransaction && onUpdate
+          ? await onUpdate(editingTransaction.id, transferPayload)
+          : await onSubmit(transferPayload);
 
       setLoading(false);
 
@@ -193,26 +244,31 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
     setLoading(true);
 
-    const { error: submitErr } = await onSubmit({
+    const txPayload = {
       type,
       amount: amountNumber,
       title: title.trim(),
-      main_category: type === 'income' ? 'income' : mainCategory,
+      main_category: (type === 'income' ? 'income' : mainCategory) as MainCategory,
       category_name: catName,
       category_id: catId,
       wallet_name: selectedWalletName,
       is_from_savings: isFromSavings,
       date,
       notes: isFromSavings ? `[Pakai Tabungan] ${title.trim()}` : title.trim()
-    });
+    };
+
+    const { error: submitErr } =
+      isEditing && editingTransaction && onUpdate
+        ? await onUpdate(editingTransaction.id, txPayload)
+        : await onSubmit(txPayload);
 
     setLoading(false);
 
     if (submitErr) {
       setError(submitErr.message || 'Gagal menyimpan transaksi.');
     } else {
-      // Efek selebrasi confetti jika transaksi pemasukan atau tabungan
-      if (type === 'income' || mainCategory === 'savings') {
+      // Efek selebrasi confetti jika transaksi pemasukan atau tabungan baru
+      if (!isEditing && (type === 'income' || mainCategory === 'savings')) {
         confetti({
           particleCount: 80,
           spread: 60,
@@ -249,10 +305,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         {/* Header Modal */}
         <div className="mb-4">
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-            {type === 'transfer' ? 'Pindah Saldo / Mutasi Dompet' : 'Catat Transaksi Keuangan'}
+            {isEditing
+              ? 'Edit Riwayat Transaksi'
+              : type === 'transfer'
+              ? 'Pindah Saldo / Mutasi Dompet'
+              : 'Catat Transaksi Keuangan'}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            {type === 'transfer'
+            {isEditing
+              ? 'Perbarui nominal, keterangan, kategori, dompet, atau tanggal transaksi'
+              : type === 'transfer'
               ? 'Transfer uang antar rekening/e-wallet tanpa mengurangi uang belanja'
               : 'Setiap catatan otomatis memperbarui limit harian dan alokasi anggaran Anda'}
           </p>
@@ -704,7 +766,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 <>
                   <Check className="w-4 h-4" />
                   <span>
-                    {type === 'transfer'
+                    {isEditing
+                      ? 'Simpan Perubahan'
+                      : type === 'transfer'
                       ? 'Simpan Pindah Saldo'
                       : 'Simpan Transaksi'}
                   </span>
