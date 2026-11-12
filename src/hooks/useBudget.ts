@@ -429,7 +429,76 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     }
   }, [user, syncRecurringToCloud]);
 
-  // Ambil data kategori
+  // Ambil data kategori (termasuk override edit/hapus kategori bawaan & kustom)
+  const getCatOverrides = useCallback((): {
+    deletedIds: string[];
+    deletedNames: string[];
+    editedMap: Record<string, { name: string; main_category: MainCategory; color: string }>;
+  } => {
+    if (!user) return { deletedIds: [], deletedNames: [], editedMap: {} };
+    const saved = localStorage.getItem(`FINFLOW_CAT_OVERRIDES_${user.id}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
+          deletedNames: Array.isArray(parsed.deletedNames) ? parsed.deletedNames : [],
+          editedMap: parsed.editedMap && typeof parsed.editedMap === 'object' ? parsed.editedMap : {}
+        };
+      } catch {}
+    }
+    const meta = user.user_metadata?.finflow_cat_overrides;
+    if (meta && typeof meta === 'object') {
+      return {
+        deletedIds: Array.isArray(meta.deletedIds) ? meta.deletedIds : [],
+        deletedNames: Array.isArray(meta.deletedNames) ? meta.deletedNames : [],
+        editedMap: meta.editedMap && typeof meta.editedMap === 'object' ? meta.editedMap : {}
+      };
+    }
+    return { deletedIds: [], deletedNames: [], editedMap: {} };
+  }, [user]);
+
+  const saveCatOverrides = useCallback(
+    async (overrides: {
+      deletedIds: string[];
+      deletedNames: string[];
+      editedMap: Record<string, { name: string; main_category: MainCategory; color: string }>;
+    }) => {
+      if (!user) return;
+      localStorage.setItem(`FINFLOW_CAT_OVERRIDES_${user.id}`, JSON.stringify(overrides));
+      try {
+        await supabase.auth.updateUser({
+          data: { finflow_cat_overrides: overrides }
+        });
+      } catch {}
+    },
+    [user]
+  );
+
+  const applyOverridesToCategories = useCallback(
+    (rawList: Category[]): Category[] => {
+      const overrides = getCatOverrides();
+      const deletedIdSet = new Set(overrides.deletedIds);
+      const deletedNameSet = new Set(overrides.deletedNames.map((n) => n.toLowerCase()));
+
+      return rawList
+        .filter((c) => !deletedIdSet.has(c.id) && !deletedNameSet.has(c.name.trim().toLowerCase()))
+        .map((c) => {
+          const edited = overrides.editedMap[c.id];
+          if (edited) {
+            return {
+              ...c,
+              name: edited.name || c.name,
+              main_category: edited.main_category || c.main_category,
+              color: edited.color || c.color
+            };
+          }
+          return c;
+        });
+    },
+    [getCatOverrides]
+  );
+
   const fetchCategories = useCallback(async () => {
     if (!user) return;
     try {
@@ -440,17 +509,20 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
         .order('name');
 
       if (!error && data) {
-        setCategories(data as Category[]);
-        localStorage.setItem(`FINFLOW_CACHE_CAT_${user.id}`, JSON.stringify(data));
+        const finalCats = applyOverridesToCategories(data as Category[]);
+        setCategories(finalCats);
+        localStorage.setItem(`FINFLOW_CACHE_CAT_${user.id}`, JSON.stringify(finalCats));
       }
     } catch (err: any) {
       console.warn('Gagal fetch categories:', err.message);
       const cached = localStorage.getItem(`FINFLOW_CACHE_CAT_${user.id}`);
       if (cached) {
-        try { setCategories(JSON.parse(cached)); } catch {}
+        try {
+          setCategories(applyOverridesToCategories(JSON.parse(cached)));
+        } catch {}
       }
     }
-  }, [user]);
+  }, [user, applyOverridesToCategories]);
 
   // Ambil pengaturan budget bulan terpilih & seluruh budget settings
   const fetchBudgetSettings = useCallback(async () => {
@@ -895,18 +967,116 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     }
   };
 
-  // Hapus Kategori Kustom
+  // Edit / Update Kategori (Bisa untuk Kategori Bawaan maupun Kategori Kustom, sekaligus memperbarui nama di transaksi)
+  const updateCustomCategory = async (
+    id: string,
+    updates: { name: string; main_category?: MainCategory; color?: string }
+  ) => {
+    if (!user) return { error: new Error('User tidak ditemukan') };
+    try {
+      const targetCat = categories.find((c) => c.id === id);
+      const oldName = targetCat?.name;
+      const newName = updates.name.trim();
+      if (!newName) return { error: new Error('Nama kategori tidak boleh kosong') };
+
+      const newMainCat = updates.main_category || targetCat?.main_category || 'needs';
+      const newColor = updates.color || targetCat?.color || '#6366f1';
+
+      // 1. Update state lokal kategori
+      setCategories((prev) => {
+        const next = prev.map((c) =>
+          c.id === id
+            ? { ...c, name: newName, main_category: newMainCat, color: newColor }
+            : c
+        );
+        localStorage.setItem(`FINFLOW_CACHE_CAT_${user.id}`, JSON.stringify(next));
+        return next;
+      });
+
+      // 2. Simpan ke overrides agar kategori bawaan pun tetap ter-update
+      const overrides = getCatOverrides();
+      overrides.editedMap[id] = {
+        name: newName,
+        main_category: newMainCat,
+        color: newColor
+      };
+      saveCatOverrides(overrides);
+
+      // 3. Jika kategori milik user di tabel categories, update di Supabase
+      if (targetCat && !targetCat.is_default && targetCat.user_id) {
+        try {
+          await supabase
+            .from('categories')
+            .update({
+              name: newName,
+              main_category: newMainCat,
+              color: newColor
+            })
+            .eq('id', id)
+            .eq('user_id', user.id);
+        } catch {}
+      }
+
+      // 4. Jika nama kategori berubah, perbarui juga transaksi yang memakai nama kategori lama
+      if (oldName && oldName !== newName) {
+        setTransactions((prev) =>
+          prev.map((t) =>
+            t.category_name === oldName ? { ...t, category_name: newName } : t
+          )
+        );
+        setAllTransactions((prev) =>
+          prev.map((t) =>
+            t.category_name === oldName ? { ...t, category_name: newName } : t
+          )
+        );
+
+        try {
+          await supabase
+            .from('transactions')
+            .update({ category_name: newName, category: newName })
+            .eq('user_id', user.id)
+            .eq('category_name', oldName);
+        } catch {}
+      }
+
+      return { error: null };
+    } catch (err: any) {
+      return { error: err };
+    }
+  };
+
+  // Hapus Kategori (Mendukung penghapusan Kategori Bawaan maupun Kategori Kustom)
   const deleteCustomCategory = async (id: string) => {
     if (!user) return { error: new Error('User tidak ditemukan') };
     try {
-      const { error } = await supabase
-        .from('categories')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
+      const targetCat = categories.find((c) => c.id === id);
 
-      if (error) throw error;
-      setCategories((prev) => prev.filter((c) => c.id !== id));
+      // Simpan ke daftar terhapus pada overrides agar tidak muncul lagi saat refresh
+      const overrides = getCatOverrides();
+      if (!overrides.deletedIds.includes(id)) {
+        overrides.deletedIds.push(id);
+      }
+      if (targetCat?.name && !overrides.deletedNames.includes(targetCat.name)) {
+        overrides.deletedNames.push(targetCat.name);
+      }
+      saveCatOverrides(overrides);
+
+      // Hapus dari tabel Supabase jika milik user
+      if (!targetCat || (!targetCat.is_default && targetCat.user_id)) {
+        try {
+          await supabase
+            .from('categories')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+        } catch {}
+      }
+
+      setCategories((prev) => {
+        const next = prev.filter((c) => c.id !== id);
+        localStorage.setItem(`FINFLOW_CACHE_CAT_${user.id}`, JSON.stringify(next));
+        return next;
+      });
       return { error: null };
     } catch (err: any) {
       return { error: err };
@@ -1362,6 +1532,7 @@ export function useBudget(selectedMonthYear: string = getCurrentMonthYear()) {
     updateTransaction,
     saveBudgetSettings,
     addCustomCategory,
+    updateCustomCategory,
     deleteCustomCategory,
     refreshData: () => {
       fetchCategories();

@@ -6,19 +6,26 @@ import {
   ChevronRight,
   Calendar,
   LogOut,
-  User as UserIcon,
   Moon,
   Sun,
   Eye,
   EyeOff,
   Database,
   Download,
-  PlusCircle
+  PlusCircle,
+  Menu,
+  LayoutGrid,
+  ReceiptText,
+  PieChart,
+  Sliders,
+  Repeat,
+  Settings
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { formatMonthYear, getCurrentMonthYear } from '../../lib/utils';
 import { NotificationCenter } from '../notifications/NotificationCenter';
 import { AppNotification } from '../../types/database';
+import { NavTabId } from '../dashboard/BentoDashboardV24';
 
 interface NavbarProps {
   selectedMonthYear: string;
@@ -34,7 +41,19 @@ interface NavbarProps {
   onMarkNotifAsRead: (id: string) => Promise<void>;
   onMarkAllNotifAsRead: () => Promise<void>;
   onOpenNotifSettings: () => void;
+  activeTab?: NavTabId;
+  onSelectTab?: (tab: NavTabId) => void;
 }
+
+const MOBILE_NAV_ITEMS: { id: NavTabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'dashboard', label: 'Beranda', icon: LayoutGrid },
+  { id: 'transactions', label: 'Riwayat', icon: ReceiptText },
+  { id: 'categories', label: 'Kategori', icon: PieChart },
+  { id: 'wallets', label: 'Dompet', icon: Wallet },
+  { id: 'budgets', label: 'Anggaran', icon: Sliders },
+  { id: 'recurring', label: 'Rutin', icon: Repeat },
+  { id: 'settings', label: 'Setelan', icon: Settings }
+];
 
 export const Navbar: React.FC<NavbarProps> = ({
   selectedMonthYear,
@@ -49,21 +68,25 @@ export const Navbar: React.FC<NavbarProps> = ({
   notifications,
   onMarkNotifAsRead,
   onMarkAllNotifAsRead,
-  onOpenNotifSettings
+  onOpenNotifSettings,
+  activeTab = 'dashboard',
+  onSelectTab
 }) => {
   const { user, profile, signOut } = useAuth();
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Tutup dropdown profil jika Escape ditekan
+  // Tutup dropdown profil & menu HP jika Escape ditekan
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && userDropdownOpen) {
-        setUserDropdownOpen(false);
+      if (e.key === 'Escape') {
+        if (userDropdownOpen) setUserDropdownOpen(false);
+        if (mobileMenuOpen) setMobileMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [userDropdownOpen]);
+  }, [userDropdownOpen, mobileMenuOpen]);
 
   // Navigasi bulan: mundur 1 bulan
   const handlePrevMonth = () => {
@@ -86,24 +109,38 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isCurrentMonth = selectedMonthYear === getCurrentMonthYear();
 
   return (
-    <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+    <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/85 dark:bg-slate-900/85 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         
         {/* Main Navbar Row */}
         <div className="flex items-center justify-between h-14 sm:h-18 lg:h-20 gap-2">
           
-          {/* 1. Logo & App Name */}
+          {/* 1. Tombol Garis Tiga (Khusus HP < md) + Logo & App Name */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Tombol Garis Tiga di Header Khusus HP (< md) */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              className={`md:hidden w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+                mobileMenuOpen
+                  ? 'bg-[#113932] text-emerald-300 shadow-sm'
+                  : 'bg-[#10B981] text-white shadow-sm shadow-emerald-500/25'
+              }`}
+              title={mobileMenuOpen ? 'Tutup Menu' : 'Buka Menu Navigasi'}
+            >
+              <Menu className="w-4 h-4 stroke-[2.5]" />
+            </button>
+
             <motion.div
               whileHover={{ rotate: 10, scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="w-9 h-9 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 shrink-0"
+              className="w-8 h-8 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 shrink-0"
             >
               <Wallet className="w-4 h-4 sm:w-6 sm:h-6" />
             </motion.div>
             <div>
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-extrabold text-base sm:text-xl tracking-tight bg-gradient-to-r from-slate-900 via-indigo-950 to-brand-700 dark:from-white dark:via-indigo-200 dark:to-brand-400 bg-clip-text text-transparent">
+                <span className="font-extrabold text-sm sm:text-xl tracking-tight bg-gradient-to-r from-slate-900 via-indigo-950 to-brand-700 dark:from-white dark:via-indigo-200 dark:to-brand-400 bg-clip-text text-transparent">
                   FinFlow
                 </span>
                 <span className="text-[9px] sm:text-[10px] font-bold tracking-wider uppercase px-1.5 sm:px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300 border border-brand-200/60 dark:border-brand-800 hidden xs:inline-block">
@@ -296,23 +333,23 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* 4. Mobile Month Navigator (Hanya muncul di HP / Mobile < md) */}
-        <div className="md:hidden pb-2.5 pt-0.5">
-          <div className="flex items-center justify-between bg-slate-100/90 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-inner">
+        <div className="md:hidden pb-2 pt-0.5">
+          <div className="flex items-center justify-between bg-slate-100/90 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-inner">
             <button
               onClick={handlePrevMonth}
               title="Bulan Sebelumnya"
-              className="p-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+              className="p-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
 
-            <div className="flex items-center gap-1.5 px-2 text-xs font-bold text-slate-800 dark:text-slate-100">
-              <Calendar className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
+            <div className="flex items-center gap-1.5 px-2 text-[11px] font-bold text-slate-800 dark:text-slate-100">
+              <Calendar className="w-3 h-3 text-brand-600 dark:text-brand-400" />
               <span>{formatMonthYear(selectedMonthYear)}</span>
               {!isCurrentMonth && (
                 <button
                   onClick={() => onMonthChange(getCurrentMonthYear())}
-                  className="ml-1 px-1.5 py-0.5 text-[10px] font-bold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 rounded-md hover:bg-brand-100 transition"
+                  className="ml-1 px-1.5 py-0.5 text-[9px] font-bold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 rounded-md hover:bg-brand-100 transition"
                 >
                   Hari Ini
                 </button>
@@ -322,12 +359,68 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={handleNextMonth}
               title="Bulan Berikutnya"
-              className="p-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
+              className="p-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
+
+        {/* 5. Menu Navigasi Garis Tiga di Header Khusus HP (< md) */}
+        <AnimatePresence initial={false}>
+          {mobileMenuOpen && (
+            <motion.div
+              key="mobile-header-nav"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              className="md:hidden overflow-hidden pb-2.5"
+            >
+              <div className="p-2 rounded-2xl bg-[#113932] dark:bg-slate-800 border border-white/10 shadow-lg">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {MOBILE_NAV_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          if (onSelectTab) onSelectTab(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
+                          isActive
+                            ? 'bg-[#10B981] text-white font-bold shadow-sm'
+                            : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="text-[10px] leading-none truncate max-w-full">
+                          {item.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  {/* Tombol + Catat di dalam menu header HP */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onOpenAddModal();
+                    }}
+                    className="py-2 px-1 rounded-xl bg-[#F97316] hover:bg-orange-600 text-white font-bold flex flex-col items-center justify-center gap-1 shadow-sm transition"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span className="text-[10px] leading-none">Catat</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       </div>
     </header>
