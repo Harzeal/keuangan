@@ -248,7 +248,47 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 11. REFRESH SCHEMA CACHE SUPABASE
+-- 11. FUNGSI RESET KATA SANDI LANGSUNG TANPA EMAIL (BEBAS RATE LIMIT EMAIL SUPABASE)
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+CREATE OR REPLACE FUNCTION public.reset_password_direct(
+    target_email TEXT,
+    new_password TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, extensions
+AS $$
+DECLARE
+    v_user_id UUID;
+BEGIN
+    IF length(trim(new_password)) < 6 THEN
+        RAISE EXCEPTION 'Kata sandi baru minimal 6 karakter.';
+    END IF;
+
+    SELECT id INTO v_user_id
+    FROM auth.users
+    WHERE lower(email) = lower(trim(target_email))
+    LIMIT 1;
+
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Email tidak ditemukan atau belum terdaftar.';
+    END IF;
+
+    UPDATE auth.users
+    SET encrypted_password = crypt(new_password, gen_salt('bf')),
+        email_confirmed_at = COALESCE(email_confirmed_at, now()),
+        updated_at = now()
+    WHERE id = v_user_id;
+
+    RETURN TRUE;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.reset_password_direct(TEXT, TEXT) TO anon, authenticated;
+
+-- 12. REFRESH SCHEMA CACHE SUPABASE
 NOTIFY pgrst, 'reload schema';
 
 -- ==============================================================================

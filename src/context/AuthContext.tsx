@@ -14,6 +14,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null; user: User | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  resetPasswordDirect: (email: string, newPassword: string) => Promise<{ error: Error | null; needsSqlSetup?: boolean }>;
   verifyRecoveryOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: Error | null }>;
@@ -226,6 +227,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resetPasswordDirect = async (email: string, newPassword: string) => {
+    try {
+      const { error } = await supabase.rpc('reset_password_direct', {
+        target_email: email.trim(),
+        new_password: newPassword
+      });
+      if (error) {
+        const msg = error.message || '';
+        const needsSqlSetup =
+          error.code === 'PGRST202' ||
+          msg.includes('Could not find the function') ||
+          msg.includes('reset_password_direct');
+        return { error: new Error(msg), needsSqlSetup };
+      }
+      return { error: null };
+    } catch (err: any) {
+      return { error: err };
+    }
+  };
+
   const verifyRecoveryOtp = async (email: string, token: string) => {
     try {
       const { error } = await supabase.auth.verifyOtp({
@@ -292,6 +313,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUp,
         signOut,
         resetPassword,
+        resetPasswordDirect,
         verifyRecoveryOtp,
         updatePassword,
         updateProfile,
