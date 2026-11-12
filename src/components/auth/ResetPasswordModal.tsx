@@ -8,9 +8,11 @@ interface ResetPasswordModalProps {
 }
 
 export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ onClose }) => {
-  const { resetPassword } = useAuth();
+  const { resetPassword, verifyRecoveryOtp } = useAuth();
   const [email, setEmail] = useState('');
+  const [otpToken, setOtpToken] = useState('');
   const [loading, setLoading] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +40,11 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ onClose 
     try {
       const { error } = await resetPassword(email);
       if (error) {
-        setError(error.message);
+        if (error.message.toLowerCase().includes('rate limit') || error.message.toLowerCase().includes('60 seconds')) {
+          setError('Terlalu banyak permintaan reset. Tunggu 1 menit atau periksa kotak masuk/spam email Anda.');
+        } else {
+          setError(error.message);
+        }
       } else {
         setSubmitted(true);
       }
@@ -46,6 +52,25 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ onClose 
       setError(err.message || 'Gagal mengirim instruksi reset kata sandi.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpToken.trim()) return;
+    setError(null);
+    setVerifyingOtp(true);
+    try {
+      const { error: otpErr } = await verifyRecoveryOtp(email, otpToken);
+      if (otpErr) {
+        setError('Kode OTP tidak valid atau sudah kadaluarsa. Silakan klik tautan di email atau kirim ulang.');
+      } else {
+        onClose();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Gagal memverifikasi kode OTP.');
+    } finally {
+      setVerifyingOtp(false);
     }
   };
 
@@ -81,17 +106,47 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ onClose 
         </div>
 
         {submitted ? (
-          <div className="py-6 text-center space-y-3">
+          <div className="py-4 text-center space-y-3">
             <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <h3 className="font-bold text-base text-white">Email Telah Dikirim!</h3>
-            <p className="text-xs text-slate-300">
-              Tautan reset telah dikirimkan ke <b className="text-indigo-400">{email}</b>. Silakan periksa kotak masuk atau folder spam Anda.
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Tautan reset telah dikirimkan ke <b className="text-indigo-400">{email}</b>. Silakan klik tautan di kotak masuk/spam email Anda.
             </p>
+
+            {error && (
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2 text-left">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyOtp} className="pt-2 border-t border-slate-700/70 text-left space-y-2">
+              <label className="block text-[11px] font-semibold text-slate-400">
+                Punya Kode Token / OTP dari Email? (Opsional)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Masukkan kode 6 digit"
+                  value={otpToken}
+                  onChange={(e) => setOtpToken(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <button
+                  type="submit"
+                  disabled={verifyingOtp || !otpToken.trim()}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl text-xs font-bold text-white transition"
+                >
+                  {verifyingOtp ? '...' : 'Verifikasi'}
+                </button>
+              </div>
+            </form>
+
             <button
               onClick={onClose}
-              className="mt-4 px-6 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold text-white transition"
+              className="w-full mt-2 px-6 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold text-white transition"
             >
               Tutup
             </button>

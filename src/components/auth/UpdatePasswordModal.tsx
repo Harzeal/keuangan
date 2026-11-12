@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Lock, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
+import { Lock, CheckCircle2, AlertCircle, ArrowRight, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface UpdatePasswordModalProps {
@@ -8,16 +8,39 @@ interface UpdatePasswordModalProps {
 }
 
 export const UpdatePasswordModal: React.FC<UpdatePasswordModalProps> = ({ onSuccess }) => {
-  const { updatePassword } = useAuth();
+  const { updatePassword, session } = useAuth();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    const rawUrl = window.location.hash + '&' + window.location.search;
+    if (rawUrl.includes('error_description=')) {
+      const params = new URLSearchParams(rawUrl.replace(/^[#?]/, ''));
+      const desc = params.get('error_description');
+      if (desc) {
+        setError('Tautan reset kata sandi sudah kadaluarsa atau pernah digunakan. Silakan minta tautan baru di halaman Login.');
+      }
+    }
+  }, []);
+
+  const handleClose = () => {
+    if (window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    onSuccess();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!session) {
+      setError('Sesi verifikasi tidak ditemukan atau tautan sudah kadaluarsa. Silakan tutup dan minta tautan reset baru.');
+      return;
+    }
 
     if (!password || password.length < 6) {
       setError('Kata sandi baru minimal 6 karakter.');
@@ -34,7 +57,11 @@ export const UpdatePasswordModal: React.FC<UpdatePasswordModalProps> = ({ onSucc
     try {
       const { error: updateErr } = await updatePassword(password);
       if (updateErr) {
-        setError(updateErr.message);
+        if (updateErr.message.toLowerCase().includes('different from the old password')) {
+          setError('Kata sandi baru harus berbeda dari kata sandi lama Anda.');
+        } else {
+          setError(updateErr.message);
+        }
       } else {
         setSuccess(true);
         // Bersihkan hash recovery dari URL
@@ -59,6 +86,15 @@ export const UpdatePasswordModal: React.FC<UpdatePasswordModalProps> = ({ onSucc
         animate={{ opacity: 1, scale: 1, y: 0 }}
         className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl relative text-slate-800 dark:text-slate-100"
       >
+        <button
+          type="button"
+          onClick={handleClose}
+          title="Tutup"
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         <div className="mb-5 text-center">
           <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-3 font-bold">
             <Lock className="w-6 h-6" />

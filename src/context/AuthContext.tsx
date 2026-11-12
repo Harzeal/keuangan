@@ -14,6 +14,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null; user: User | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  verifyRecoveryOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: Error | null }>;
   refreshProfile: () => Promise<void>;
@@ -21,12 +22,31 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Tangkap parameter URL awal sebelum @supabase/supabase-js membersihkan hash/query
+const INITIAL_HASH = typeof window !== 'undefined' ? window.location.hash : '';
+const INITIAL_SEARCH = typeof window !== 'undefined' ? window.location.search : '';
+
+const checkUrlIsRecovery = () => {
+  const hash = typeof window !== 'undefined' ? window.location.hash : '';
+  const search = typeof window !== 'undefined' ? window.location.search : '';
+  return (
+    INITIAL_HASH.includes('type=recovery') ||
+    INITIAL_HASH.includes('reset-password') ||
+    INITIAL_SEARCH.includes('type=recovery') ||
+    INITIAL_SEARCH.includes('reset=recovery') ||
+    hash.includes('type=recovery') ||
+    hash.includes('reset-password') ||
+    search.includes('type=recovery') ||
+    search.includes('reset=recovery')
+  );
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(() => checkUrlIsRecovery());
 
   // Ambil profil dari tabel public.profiles
   const fetchProfile = async (userId: string, userEmail?: string, metaFullName?: string) => {
@@ -67,28 +87,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
-    // Cek apakah URL dibuka dari tautan recovery / reset password di Gmail
-    if (window.location.hash.includes('type=recovery') || window.location.hash.includes('reset-password')) {
-      setIsPasswordRecovery(true);
-    }
-
-    // Ambil sesi aktif pertama kali
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!mounted) return;
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(
-          session.user.id,
-          session.user.email,
-          session.user.user_metadata?.full_name
-        ).finally(() => {
-          if (mounted) setLoading(false);
-        });
-      } else {
-        setLoading(false);
+    const initAuthAndRecovery = async () => {
+      // 1. Cek apakah URL dibuka dari tautan recovery / reset password di email
+      if (checkUrlIsRecovery()) {
+        setIsPasswordRecovery(true);
       }
-    });
+
+      // 2. Perbaiki bila ada double-hash (misal: /#reset-password#access_token=...&refresh_token=...)
+      const rawHash = INITIAL_HASH || window.location.hash;
+      if (rawHash.includes('access_token=')) {
+        const cleanQuery = rawHash.replace(/^#reset-password#?/, '').replace(/^#/, '');
+        const hashParams = new URLSearchParams(cleanQuery);
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        const type = hashParams.get('type');
+        if (type === 'recovery') {
+          setIsPasswordRecovery(true);
+        }
+        if (accessToken && refreshToken) {
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+        }
+      }
+
+      // 3. Tangani bila email menggunakan parameter query ?token_hash=...&type=recovery atau ?code=...
+      const searchParams = new URLSearchParams(INITIAL_SEARCH || window.location.search);
+      const tokenHash = searchParams.get('token_hash');
+      const queryType = searchParams.get('type');
+      const pkceCode = searchParams.get('code');
+
+      if (tokenHash && queryType === 'recovery') {
+        setIsPasswordRecovery(true);
+        await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'recovery'
+        });
+      } else if (pkceCode) {
+        await supabase.auth.exchangeCodeForSession(pkceCode);
+      }
+
+      // 4. Ambil sesi aktif pertama kali
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!mounted) return;
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+      if (currentSession?.user) {
+        await fetchProfile(
+          currentSession.user.id,
+          currentSession.user.email,
+          currentSession.user.user_metadata?.full_name
+        );
+      }
+      if (mounted) setLoading(false);
+    };
+
+    initAuthAndRecovery();
 
     // Pasang listener auth state change
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -98,7 +153,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(newSession?.user ?? null);
 
         // Jika event reset password terpantau
-        if (event === 'PASSWORD_RECOVERY' || window.location.hash.includes('type=recovery') || window.location.hash.includes('reset-password')) {
+        if (event === 'PASSWORD_RECOVERY' || checkUrlIsRecovery()) {
           setIsPasswordRecovery(true);
         }
 
@@ -161,9 +216,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const resetPassword = async (email: string) => {
     try {
+      // Gunakan origin murni tanpa hash ganda agar cocok dengan Site URL Supabase & tidak merusak #access_token
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/#reset-password`
+        redirectTo: `${window.location.origin}`
       });
+      return { error };
+    } catch (err: any) {
+      return { error: err };
+    }
+  };
+
+  const verifyRecoveryOtp = async (email: string, token: string) => {
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: token.trim(),
+        type: 'recovery'
+      });
+      if (!error) {
+        setIsPasswordRecovery(true);
+      }
       return { error };
     } catch (err: any) {
       return { error: err };
@@ -220,6 +292,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUp,
         signOut,
         resetPassword,
+        verifyRecoveryOtp,
         updatePassword,
         updateProfile,
         refreshProfile

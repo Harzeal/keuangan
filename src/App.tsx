@@ -678,6 +678,22 @@ export const App: React.FC = () => {
 
                   <button
                     type="button"
+                    onClick={() => setIsPasswordRecovery(true)}
+                    className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 text-left transition group"
+                  >
+                    <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-2.5 group-hover:scale-105 transition">
+                      <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </div>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                      Ganti Kata Sandi Akun
+                    </h3>
+                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Perbarui kata sandi keamanan akun FinFlow Anda secara langsung.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setIsConfigModalOpen(true)}
                     className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 text-left transition group"
                   >
